@@ -29,137 +29,20 @@ jobs:
     strategy:
       matrix:
         jobs:
-          # Windows (Go 1.25 with special patch can work on Windows 7) 
-          - { goos: windows, goarch: '386', output: '386' }
-          - { goos: windows, goarch: amd64, goamd64: v1, output: amd64-compatible }
+          # Windows 11 等现代 PC：64 位、Go 1.25、AMD64 v3
           - { goos: windows, goarch: amd64, goamd64: v3, output: amd64 }
-          - { goos: windows, goarch: amd64, goamd64: v1, output: amd64-v1 }
-          - { goos: windows, goarch: amd64, goamd64: v2, output: amd64-v2 }
-          - { goos: windows, goarch: amd64, goamd64: v3, output: amd64-v3 }
-          - { goos: windows, goarch: arm64, output: arm64 }
 
-          # Android
-          - { goos: android, goarch: '386', ndk: i686-linux-android34, output: '386' }
-          - { goos: android, goarch: amd64, ndk: x86_64-linux-android34, output: amd64 }
-          - { goos: android, goarch: arm, ndk: armv7a-linux-androideabi34, output: armv7 }
+          # 现代安卓（小米等）：arm64-v8
           - { goos: android, goarch: arm64, ndk: aarch64-linux-android34, output: arm64-v8 }
-
-          # Windows Go 1.24
-          - { goos: windows, goarch: '386', output: '386-go124', goversion: '1.24' }
-          - { goos: windows, goarch: amd64, goamd64: v1, output: amd64-v1-go124, goversion: '1.24' }
-          - { goos: windows, goarch: amd64, goamd64: v2, output: amd64-v2-go124, goversion: '1.24' }
-          - { goos: windows, goarch: amd64, goamd64: v3, output: amd64-v3-go124, goversion: '1.24' }
-
-          # Windows Go 1.23
-          - { goos: windows, goarch: '386', output: '386-go123', goversion: '1.23' }
-          - { goos: windows, goarch: amd64, goamd64: v1, output: amd64-v1-go123, goversion: '1.23' }
-          - { goos: windows, goarch: amd64, goamd64: v2, output: amd64-v2-go123, goversion: '1.23' }
-          - { goos: windows, goarch: amd64, goamd64: v3, output: amd64-v3-go123, goversion: '1.23' }
-
-          # Windows Go 1.22
-          - { goos: windows, goarch: '386', output: '386-go122', goversion: '1.22' }
-          - { goos: windows, goarch: amd64, goamd64: v1, output: amd64-v1-go122, goversion: '1.22' }
-          - { goos: windows, goarch: amd64, goamd64: v2, output: amd64-v2-go122, goversion: '1.22' }
-          - { goos: windows, goarch: amd64, goamd64: v3, output: amd64-v3-go122, goversion: '1.22' }
-
-          # Windows Go 1.21
-          - { goos: windows, goarch: '386', output: '386-go121', goversion: '1.21' }
-          - { goos: windows, goarch: amd64, goamd64: v1, output: amd64-v1-go121, goversion: '1.21' }
-          - { goos: windows, goarch: amd64, goamd64: v2, output: amd64-v2-go121, goversion: '1.21' }
-          - { goos: windows, goarch: amd64, goamd64: v3, output: amd64-v3-go121, goversion: '1.21' }
-
-          # Windows Go 1.20
-          - { goos: windows, goarch: '386', output: '386-go120', goversion: '1.20' }
-          - { goos: windows, goarch: amd64, goamd64: v1, output: amd64-v1-go120, goversion: '1.20' }
-          - { goos: windows, goarch: amd64, goamd64: v2, output: amd64-v2-go120, goversion: '1.20' }
-          - { goos: windows, goarch: amd64, goamd64: v3, output: amd64-v3-go120, goversion: '1.20' }
 
     steps:
     - uses: actions/checkout@v5
 
     - name: Set up Go
-      if: ${{ matrix.jobs.goversion == '' && matrix.jobs.abi != '1' }}
       uses: actions/setup-go@v6
       with:
         go-version: '1.25'
-        check-latest: true # Always check for the latest patch release
-
-    - name: Set up Go
-      if: ${{ matrix.jobs.goversion != '' && matrix.jobs.abi != '1' }}
-      uses: actions/setup-go@v6
-      with:
-        go-version: ${{ matrix.jobs.goversion }}
-        check-latest: true # Always check for the latest patch release
-
-      # modify from https://github.com/restic/restic/issues/4636#issuecomment-1896455557
-      # this patch file only works on golang1.25.x
-      # that means after golang1.26 release it must be changed
-      # see: https://github.com/MetaCubeX/go/commits/release-branch.go1.25/
-      # revert:
-      # 693def151adff1af707d82d28f55dba81ceb08e1: "crypto/rand,runtime: switch RtlGenRandom for ProcessPrng"
-      # 7c1157f9544922e96945196b47b95664b1e39108: "net: remove sysSocket fallback for Windows 7"
-      # 48042aa09c2f878c4faa576948b07fe625c4707a: "syscall: remove Windows 7 console handle workaround"
-      # a17d959debdb04cd550016a3501dd09d50cd62e7: "runtime: always use LoadLibraryEx to load system libraries"
-      # f0894a00f4b756d4b9b4078af2e686b359493583: "os: remove 5ms sleep on Windows in (*Process).Wait"
-      # sepical fix:
-      # - os.RemoveAll not working on Windows7
-    - name: Revert Golang1.25 commit for Windows7/8
-      if: ${{ matrix.jobs.goos == 'windows' && matrix.jobs.goversion == '' }}
-      run: |
-        cd $(go env GOROOT)
-        patch --verbose -p 1 < $GITHUB_WORKSPACE/.github/patch/go1.25.patch
-
-      # modify from https://github.com/restic/restic/issues/4636#issuecomment-1896455557
-      # this patch file only works on golang1.24.x
-      # that means after golang1.25 release it must be changed
-      # see: https://github.com/MetaCubeX/go/commits/release-branch.go1.24/
-      # revert:
-      # 693def151adff1af707d82d28f55dba81ceb08e1: "crypto/rand,runtime: switch RtlGenRandom for ProcessPrng"
-      # 7c1157f9544922e96945196b47b95664b1e39108: "net: remove sysSocket fallback for Windows 7"
-      # 48042aa09c2f878c4faa576948b07fe625c4707a: "syscall: remove Windows 7 console handle workaround"
-      # a17d959debdb04cd550016a3501dd09d50cd62e7: "runtime: always use LoadLibraryEx to load system libraries"
-    - name: Revert Golang1.24 commit for Windows7/8
-      if: ${{ matrix.jobs.goos == 'windows' && matrix.jobs.goversion == '1.24' }}
-      run: |
-        cd $(go env GOROOT)
-        patch --verbose -p 1 < $GITHUB_WORKSPACE/.github/patch/go1.24.patch
-
-      # modify from https://github.com/restic/restic/issues/4636#issuecomment-1896455557
-      # this patch file only works on golang1.23.x
-      # that means after golang1.24 release it must be changed
-      # see: https://github.com/MetaCubeX/go/commits/release-branch.go1.23/
-      # revert:
-      # 693def151adff1af707d82d28f55dba81ceb08e1: "crypto/rand,runtime: switch RtlGenRandom for ProcessPrng"
-      # 7c1157f9544922e96945196b47b95664b1e39108: "net: remove sysSocket fallback for Windows 7"
-      # 48042aa09c2f878c4faa576948b07fe625c4707a: "syscall: remove Windows 7 console handle workaround"
-      # a17d959debdb04cd550016a3501dd09d50cd62e7: "runtime: always use LoadLibraryEx to load system libraries"
-    - name: Revert Golang1.23 commit for Windows7/8
-      if: ${{ matrix.jobs.goos == 'windows' && matrix.jobs.goversion == '1.23' }}
-      run: |
-        cd $(go env GOROOT)
-        patch --verbose -p 1 < $GITHUB_WORKSPACE/.github/patch/go1.23.patch
-
-      # modify from https://github.com/restic/restic/issues/4636#issuecomment-1896455557
-      # this patch file only works on golang1.22.x
-      # that means after golang1.23 release it must be changed
-      # see: https://github.com/MetaCubeX/go/commits/release-branch.go1.22/
-      # revert:
-      # 693def151adff1af707d82d28f55dba81ceb08e1: "crypto/rand,runtime: switch RtlGenRandom for ProcessPrng"
-      # 7c1157f9544922e96945196b47b95664b1e39108: "net: remove sysSocket fallback for Windows 7"
-      # 48042aa09c2f878c4faa576948b07fe625c4707a: "syscall: remove Windows 7 console handle workaround"
-      # a17d959debdb04cd550016a3501dd09d50cd62e7: "runtime: always use LoadLibraryEx to load system libraries"
-    - name: Revert Golang1.22 commit for Windows7/8
-      if: ${{ matrix.jobs.goos == 'windows' && matrix.jobs.goversion == '1.22' }}
-      run: |
-        cd $(go env GOROOT)
-        patch --verbose -p 1 < $GITHUB_WORKSPACE/.github/patch/go1.22.patch
-
-      # modify from https://github.com/restic/restic/issues/4636#issuecomment-1896455557
-    - name: Revert Golang1.21 commit for Windows7/8
-      if: ${{ matrix.jobs.goos == 'windows' && matrix.jobs.goversion == '1.21' }}
-      run: |
-        cd $(go env GOROOT)
-        patch --verbose -p 1 < $GITHUB_WORKSPACE/.github/patch/go1.21.patch
+        check-latest: true
 
     - name: Set variables
       run: |
