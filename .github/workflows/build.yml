@@ -29,7 +29,7 @@ jobs:
     strategy:
       matrix:
         jobs:
-          # Windows (Go 1.25 with special patch can work on Windows 7)
+          # Windows (Go 1.25 with special patch can work on Windows 7) 
           - { goos: windows, goarch: '386', output: '386' }
           - { goos: windows, goarch: amd64, goamd64: v1, output: amd64-compatible }
           - { goos: windows, goarch: amd64, goamd64: v3, output: amd64 }
