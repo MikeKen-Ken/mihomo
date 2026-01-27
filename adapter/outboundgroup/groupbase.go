@@ -26,12 +26,13 @@ type GroupBase struct {
 	excludeFilterRegs []*regexp2.Regexp
 	excludeTypeArray  []string
 	providers         []P.ProxyProvider
-	failedTestMux     sync.Mutex
-	failedTimes       int
-	failedTime        time.Time
-	failedTesting     atomic.Bool
-	TestTimeout       int
-	maxFailedTimes    int
+	failedTestMux        sync.Mutex
+	failedTimes          int
+	failedTime           time.Time
+	failedTesting        atomic.Bool
+	TestTimeout          int
+	failureResetInterval int
+	maxFailedTimes       int
 
 	// for GetProxies
 	getProxiesMutex  sync.Mutex
@@ -40,14 +41,15 @@ type GroupBase struct {
 }
 
 type GroupBaseOption struct {
-	Name           string
-	Type           C.AdapterType
-	Filter         string
-	ExcludeFilter  string
-	ExcludeType    string
-	TestTimeout    int
-	MaxFailedTimes int
-	Providers      []P.ProxyProvider
+	Name                  string
+	Type                  C.AdapterType
+	Filter                string
+	ExcludeFilter         string
+	ExcludeType           string
+	TestTimeout           int
+	FailureResetInterval  int
+	MaxFailedTimes        int
+	Providers             []P.ProxyProvider
 }
 
 func NewGroupBase(opt GroupBaseOption) *GroupBase {
@@ -79,12 +81,16 @@ func NewGroupBase(opt GroupBaseOption) *GroupBase {
 		excludeTypeArray:  excludeTypeArray,
 		providers:         opt.Providers,
 		failedTesting:     atomic.NewBool(false),
-		TestTimeout:       opt.TestTimeout,
-		maxFailedTimes:    opt.MaxFailedTimes,
+		TestTimeout:          opt.TestTimeout,
+		failureResetInterval: opt.FailureResetInterval,
+		maxFailedTimes:        opt.MaxFailedTimes,
 	}
 
 	if gb.TestTimeout == 0 {
 		gb.TestTimeout = 5000
+	}
+	if gb.failureResetInterval == 0 {
+		gb.failureResetInterval = 5000
 	}
 	if gb.maxFailedTimes == 0 {
 		gb.maxFailedTimes = 5
@@ -265,7 +271,7 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 			log.Debugln("ProxyGroup: %s first failed", gb.Name())
 			gb.failedTime = time.Now()
 		} else {
-			if time.Since(gb.failedTime) > time.Duration(gb.TestTimeout)*time.Millisecond {
+			if time.Since(gb.failedTime) > time.Duration(gb.failureResetInterval)*time.Millisecond {
 				gb.failedTimes = 0
 				return
 			}

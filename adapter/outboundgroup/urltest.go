@@ -213,14 +213,15 @@ func parseURLTestOption(config map[string]any) []urlTestOption {
 func NewURLTest(option *GroupCommonOption, providers []P.ProxyProvider, options ...urlTestOption) *URLTest {
 	urlTest := &URLTest{
 		GroupBase: NewGroupBase(GroupBaseOption{
-			Name:           option.Name,
-			Type:           C.URLTest,
-			Filter:         option.Filter,
-			ExcludeFilter:  option.ExcludeFilter,
-			ExcludeType:    option.ExcludeType,
-			TestTimeout:    option.TestTimeout,
-			MaxFailedTimes: option.MaxFailedTimes,
-			Providers:      providers,
+			Name:                 option.Name,
+			Type:                 C.URLTest,
+			Filter:               option.Filter,
+			ExcludeFilter:        option.ExcludeFilter,
+			ExcludeType:          option.ExcludeType,
+			TestTimeout:          option.TestTimeout,
+			FailureResetInterval: option.FailureResetInterval,
+			MaxFailedTimes:       option.MaxFailedTimes,
+			Providers:            providers,
 		}),
 		fastSingle:     singledo.NewSingle[C.Proxy](time.Second * 10),
 		disableUDP:     option.DisableUDP,
