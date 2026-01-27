@@ -18,6 +18,8 @@ import (
 
 	"github.com/dlclark/regexp2"
 	"golang.org/x/exp/slices"
+	
+	"cfa/native/delegate"
 )
 
 type GroupBase struct {
@@ -288,6 +290,12 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 func (gb *GroupBase) healthCheck() {
 	if gb.failedTesting.Load() {
 		return
+	}
+
+	// Notify health check triggered for fallback groups
+	if gb.Type() == C.Fallback {
+		log.Debugln("Fallback group %s triggered health check", gb.Name())
+		delegate.NotifyHealthCheckTriggered(gb.Name())
 	}
 
 	gb.failedTesting.Store(true)
