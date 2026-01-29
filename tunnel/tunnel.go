@@ -656,14 +656,7 @@ func formatRuleInfo(rule C.Rule, metadata *C.Metadata) string {
 	return fmt.Sprintf("%s(%s)", ruleType, payload)
 }
 
-// ANSI color codes for CMFA logging
-const (
-	colorReset    = "\033[0m"
-	colorBoldBlue = "\033[1;34m"
-	colorRed      = "\033[31m"
-)
-
-// logMetadataCMFA formats log for Android (CMFA) with new format and colors
+// logMetadataCMFA formats log for Android (CMFA), plain text only (no ANSI; logcat shows raw codes)
 // Format: [TCP] 127.0.0.1:54210 --> com.android.vending --> play-fe.googleapis.com:443 --> proxy --> DOMAIN-SUFFIX,+..googleapis.com --> 🔀[🇭🇰 01]
 func logMetadataCMFA(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
 	network := strings.ToUpper(metadata.NetWork.String())
@@ -672,38 +665,36 @@ func logMetadataCMFA(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection)
 	remoteAddr := metadata.RemoteAddress()
 	chains := remoteConn.Chains().String()
 
-	// Highlight process name with bold blue
-	processHighlighted := ""
+	processPart := ""
 	if process != "" {
-		processHighlighted = fmt.Sprintf(" --> %s%s%s", colorBoldBlue, process, colorReset)
+		processPart = fmt.Sprintf(" --> %s", process)
 	}
 
 	switch {
 	case metadata.SpecialProxy != "":
 		log.Infoln("[%s] %s%s --> %s --> %s --> %s",
-			network, sourceAddr, processHighlighted, remoteAddr, metadata.SpecialProxy, chains)
+			network, sourceAddr, processPart, remoteAddr, metadata.SpecialProxy, chains)
 	case rule != nil:
 		ruleType, ruleDetail := formatRuleInfoCMFA(rule, metadata)
-		// Highlight rule detail with bold blue
-		ruleDetailHighlighted := ""
+		ruleDetailPart := ""
 		if ruleDetail != "" {
-			ruleDetailHighlighted = fmt.Sprintf(" --> %s%s%s", colorBoldBlue, ruleDetail, colorReset)
+			ruleDetailPart = fmt.Sprintf(" --> %s", ruleDetail)
 		}
 		log.Infoln("[%s] %s%s --> %s --> %s%s --> %s",
-			network, sourceAddr, processHighlighted, remoteAddr, ruleType, ruleDetailHighlighted, chains)
+			network, sourceAddr, processPart, remoteAddr, ruleType, ruleDetailPart, chains)
 	case mode == Global:
 		log.Infoln("[%s] %s%s --> %s --> GLOBAL --> %s",
-			network, sourceAddr, processHighlighted, remoteAddr, chains)
+			network, sourceAddr, processPart, remoteAddr, chains)
 	case mode == Direct:
 		log.Infoln("[%s] %s%s --> %s --> DIRECT --> %s",
-			network, sourceAddr, processHighlighted, remoteAddr, chains)
+			network, sourceAddr, processPart, remoteAddr, chains)
 	default:
 		log.Infoln("[%s] %s%s --> %s --> NO MATCH --> %s",
-			network, sourceAddr, processHighlighted, remoteAddr, chains)
+			network, sourceAddr, processPart, remoteAddr, chains)
 	}
 }
 
-// logMetadataErrCMFA formats error log for Android (CMFA) with new format and colors
+// logMetadataErrCMFA formats error log for Android (CMFA), plain text only
 func logMetadataErrCMFA(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err error) {
 	network := strings.ToUpper(metadata.NetWork.String())
 	sourceAddr := metadata.SourceAddress()
@@ -711,24 +702,22 @@ func logMetadataErrCMFA(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter,
 	remoteAddr := metadata.RemoteAddress()
 	errMsg := err.Error()
 
-	// Highlight process name with bold blue
-	processHighlighted := ""
+	processPart := ""
 	if process != "" {
-		processHighlighted = fmt.Sprintf(" --> %s%s%s", colorBoldBlue, process, colorReset)
+		processPart = fmt.Sprintf(" --> %s", process)
 	}
 
 	if rule == nil {
-		log.Warnln("[%s] %s%s --> %s --> %s --> %sERROR: %s%s",
-			network, sourceAddr, processHighlighted, remoteAddr, proxy.Name(), colorRed, errMsg, colorReset)
+		log.Warnln("[%s] %s%s --> %s --> %s --> ERROR: %s",
+			network, sourceAddr, processPart, remoteAddr, proxy.Name(), errMsg)
 	} else {
 		ruleType, ruleDetail := formatRuleInfoCMFA(rule, metadata)
-		// Highlight rule detail with bold blue
-		ruleDetailHighlighted := ""
+		ruleDetailPart := ""
 		if ruleDetail != "" {
-			ruleDetailHighlighted = fmt.Sprintf(" --> %s%s%s", colorBoldBlue, ruleDetail, colorReset)
+			ruleDetailPart = fmt.Sprintf(" --> %s", ruleDetail)
 		}
-		log.Warnln("[%s] %s%s --> %s --> %s%s --> %s --> %sERROR: %s%s",
-			network, sourceAddr, processHighlighted, remoteAddr, ruleType, ruleDetailHighlighted, proxy.Name(), colorRed, errMsg, colorReset)
+		log.Warnln("[%s] %s%s --> %s --> %s%s --> %s --> ERROR: %s",
+			network, sourceAddr, processPart, remoteAddr, ruleType, ruleDetailPart, proxy.Name(), errMsg)
 	}
 }
 
