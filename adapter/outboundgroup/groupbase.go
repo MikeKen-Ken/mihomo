@@ -18,8 +18,6 @@ import (
 
 	"github.com/dlclark/regexp2"
 	"golang.org/x/exp/slices"
-	
-	"cfa/native/delegate"
 )
 
 type GroupBase struct {
@@ -292,10 +290,10 @@ func (gb *GroupBase) healthCheck() {
 		return
 	}
 
-	// Notify health check triggered for fallback groups
+	// Notify health check triggered for fallback groups (CFA only)
 	if gb.Type() == C.Fallback {
 		log.Debugln("Fallback group %s triggered health check", gb.Name())
-		delegate.NotifyHealthCheckTriggered(gb.Name())
+		notifyHealthCheckTriggered(gb.Name())
 	}
 
 	gb.failedTesting.Store(true)
