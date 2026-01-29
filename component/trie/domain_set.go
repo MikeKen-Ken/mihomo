@@ -109,8 +109,11 @@ func (ss *DomainSet) HasWithMatch(key string) (bool, string) {
 					}
 					if j == len(key) {
 						if getBit(ss.leaves, nextNodeId) != 0 {
-							// matched by wildcard, return the suffix pattern
+							// matched by wildcard, return the suffix pattern (strip leading dot to avoid "+..")
 							suffix := originalKey[len(originalKey)-(cursor.index):]
+							if len(suffix) > 0 && suffix[0] == '.' {
+								suffix = suffix[1:]
+							}
 							return true, "+." + suffix
 						} else {
 							goto RESTART
@@ -129,8 +132,11 @@ func (ss *DomainSet) HasWithMatch(key string) (bool, string) {
 			}
 			// handle wildcard for domain
 			if ss.labels[bmIdx-nodeId] == complexWildcardByte {
-				// matched by complex wildcard (+), return the suffix pattern
+				// matched by complex wildcard (+), return the suffix pattern (strip leading dot to avoid "+..")
 				suffix := originalKey[len(originalKey)-i:]
+				if len(suffix) > 0 && suffix[0] == '.' {
+					suffix = suffix[1:]
+				}
 				return true, "+." + suffix
 			} else if ss.labels[bmIdx-nodeId] == wildcardByte {
 				cursor := wildcardCursor{}
