@@ -604,6 +604,10 @@ func handleTCPConn(connCtx C.ConnContext) {
 }
 
 func logMetadataErr(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err error) {
+	if features.CMFA {
+		logMetadataErrCMFA(metadata, rule, proxy, err)
+		return
+	}
 	if rule == nil {
 		log.Warnln("[%s] dial %s %s --> %s error: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
 	} else {
@@ -613,6 +617,10 @@ func logMetadataErr(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err
 }
 
 func logMetadata(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
+	if features.CMFA {
+		logMetadataCMFA(metadata, rule, remoteConn)
+		return
+	}
 	switch {
 	case metadata.SpecialProxy != "":
 		log.Infoln("[%s] %s --> %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
@@ -646,6 +654,97 @@ func formatRuleInfo(rule C.Rule, metadata *C.Metadata) string {
 		return fmt.Sprintf("%s(%s)[%s]", ruleType, payload, detail)
 	}
 	return fmt.Sprintf("%s(%s)", ruleType, payload)
+}
+
+// ANSI color codes for CMFA logging
+const (
+	colorReset    = "\033[0m"
+	colorBoldBlue = "\033[1;34m"
+	colorRed      = "\033[31m"
+)
+
+// logMetadataCMFA formats log for Android (CMFA) with new format and colors
+// Format: [TCP] 127.0.0.1:54210 --> com.android.vending --> play-fe.googleapis.com:443 --> proxy --> DOMAIN-SUFFIX,+..googleapis.com --> 🔀[🇭🇰 01]
+func logMetadataCMFA(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
+	network := strings.ToUpper(metadata.NetWork.String())
+	sourceAddr := metadata.SourceAddress()
+	process := metadata.Process
+	remoteAddr := metadata.RemoteAddress()
+	chains := remoteConn.Chains().String()
+
+	// Highlight process name with bold blue
+	processHighlighted := ""
+	if process != "" {
+		processHighlighted = fmt.Sprintf(" --> %s%s%s", colorBoldBlue, process, colorReset)
+	}
+
+	switch {
+	case metadata.SpecialProxy != "":
+		log.Infoln("[%s] %s%s --> %s --> %s --> %s",
+			network, sourceAddr, processHighlighted, remoteAddr, metadata.SpecialProxy, chains)
+	case rule != nil:
+		ruleType, ruleDetail := formatRuleInfoCMFA(rule, metadata)
+		// Highlight rule detail with bold blue
+		ruleDetailHighlighted := ""
+		if ruleDetail != "" {
+			ruleDetailHighlighted = fmt.Sprintf(" --> %s%s%s", colorBoldBlue, ruleDetail, colorReset)
+		}
+		log.Infoln("[%s] %s%s --> %s --> %s%s --> %s",
+			network, sourceAddr, processHighlighted, remoteAddr, ruleType, ruleDetailHighlighted, chains)
+	case mode == Global:
+		log.Infoln("[%s] %s%s --> %s --> GLOBAL --> %s",
+			network, sourceAddr, processHighlighted, remoteAddr, chains)
+	case mode == Direct:
+		log.Infoln("[%s] %s%s --> %s --> DIRECT --> %s",
+			network, sourceAddr, processHighlighted, remoteAddr, chains)
+	default:
+		log.Infoln("[%s] %s%s --> %s --> NO MATCH --> %s",
+			network, sourceAddr, processHighlighted, remoteAddr, chains)
+	}
+}
+
+// logMetadataErrCMFA formats error log for Android (CMFA) with new format and colors
+func logMetadataErrCMFA(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err error) {
+	network := strings.ToUpper(metadata.NetWork.String())
+	sourceAddr := metadata.SourceAddress()
+	process := metadata.Process
+	remoteAddr := metadata.RemoteAddress()
+	errMsg := err.Error()
+
+	// Highlight process name with bold blue
+	processHighlighted := ""
+	if process != "" {
+		processHighlighted = fmt.Sprintf(" --> %s%s%s", colorBoldBlue, process, colorReset)
+	}
+
+	if rule == nil {
+		log.Warnln("[%s] %s%s --> %s --> %s --> %sERROR: %s%s",
+			network, sourceAddr, processHighlighted, remoteAddr, proxy.Name(), colorRed, errMsg, colorReset)
+	} else {
+		ruleType, ruleDetail := formatRuleInfoCMFA(rule, metadata)
+		// Highlight rule detail with bold blue
+		ruleDetailHighlighted := ""
+		if ruleDetail != "" {
+			ruleDetailHighlighted = fmt.Sprintf(" --> %s%s%s", colorBoldBlue, ruleDetail, colorReset)
+		}
+		log.Warnln("[%s] %s%s --> %s --> %s%s --> %s --> %sERROR: %s%s",
+			network, sourceAddr, processHighlighted, remoteAddr, ruleType, ruleDetailHighlighted, proxy.Name(), colorRed, errMsg, colorReset)
+	}
+}
+
+// formatRuleInfoCMFA returns rule type and rule detail separately for CMFA logging
+func formatRuleInfoCMFA(rule C.Rule, metadata *C.Metadata) (ruleType string, ruleDetail string) {
+	ruleType = rule.RuleType().String()
+	payload := rule.Payload()
+	detail := metadata.RuleDetail
+
+	if payload != "" {
+		ruleType = fmt.Sprintf("%s(%s)", ruleType, payload)
+	}
+
+	// Return the detail (which may include the domain suffix like +..googleapis.com)
+	ruleDetail = detail
+	return
 }
 
 func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, error) {
