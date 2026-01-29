@@ -72,9 +72,17 @@ func (t *DomainTrie[T]) NewDomainSet() *DomainSet {
 
 // Has query for a key and return whether it presents in the DomainSet.
 func (ss *DomainSet) Has(key string) bool {
+	matched, _ := ss.HasWithMatch(key)
+	return matched
+}
+
+// HasWithMatch query for a key and return whether it presents in the DomainSet,
+// along with the matched rule pattern (e.g., "+.example.com" or "example.com").
+func (ss *DomainSet) HasWithMatch(key string) (bool, string) {
 	if ss == nil {
-		return false
+		return false, ""
 	}
+	originalKey := key
 	key = utils.Reverse(key)
 	key = strings.ToLower(key)
 	// no more labels in this node
@@ -101,7 +109,9 @@ func (ss *DomainSet) Has(key string) bool {
 					}
 					if j == len(key) {
 						if getBit(ss.leaves, nextNodeId) != 0 {
-							return true
+							// matched by wildcard, return the suffix pattern
+							suffix := originalKey[len(originalKey)-(cursor.index):]
+							return true, "+." + suffix
 						} else {
 							goto RESTART
 						}
@@ -115,11 +125,13 @@ func (ss *DomainSet) Has(key string) bool {
 						}
 					}
 				}
-				return false
+				return false, ""
 			}
 			// handle wildcard for domain
 			if ss.labels[bmIdx-nodeId] == complexWildcardByte {
-				return true
+				// matched by complex wildcard (+), return the suffix pattern
+				suffix := originalKey[len(originalKey)-i:]
+				return true, "+." + suffix
 			} else if ss.labels[bmIdx-nodeId] == wildcardByte {
 				cursor := wildcardCursor{}
 				cursor.bmIdx = bmIdx
@@ -133,8 +145,11 @@ func (ss *DomainSet) Has(key string) bool {
 		bmIdx = selectIthOne(ss.labelBitmap, ss.ranks, ss.selects, nodeId-1) + 1
 	}
 
-	return getBit(ss.leaves, nodeId) != 0
-
+	if getBit(ss.leaves, nodeId) != 0 {
+		// exact match
+		return true, originalKey
+	}
+	return false, ""
 }
 
 func (ss *DomainSet) keys(f func(key string) bool) {

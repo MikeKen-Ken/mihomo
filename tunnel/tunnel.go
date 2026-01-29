@@ -607,7 +607,8 @@ func logMetadataErr(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err
 	if rule == nil {
 		log.Warnln("[%s] dial %s %s --> %s error: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
 	} else {
-		log.Warnln("[%s] dial %s (match %s/%s) %s --> %s error: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), rule.RuleType().String(), rule.Payload(), metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
+		ruleInfo := formatRuleInfo(rule, metadata)
+		log.Warnln("[%s] dial %s (match %s) %s --> %s error: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), ruleInfo, metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
 	}
 }
 
@@ -616,11 +617,8 @@ func logMetadata(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
 	case metadata.SpecialProxy != "":
 		log.Infoln("[%s] %s --> %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
 	case rule != nil:
-		if rule.Payload() != "" {
-			log.Infoln("[%s] %s --> %s match %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), fmt.Sprintf("%s(%s)", rule.RuleType().String(), rule.Payload()), remoteConn.Chains().String())
-		} else {
-			log.Infoln("[%s] %s --> %s match %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), rule.RuleType().String(), remoteConn.Chains().String())
-		}
+		ruleInfo := formatRuleInfo(rule, metadata)
+		log.Infoln("[%s] %s --> %s match %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), ruleInfo, remoteConn.Chains().String())
 	case mode == Global:
 		log.Infoln("[%s] %s --> %s using GLOBAL", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
 	case mode == Direct:
@@ -628,6 +626,26 @@ func logMetadata(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
 	default:
 		log.Infoln("[%s] %s --> %s doesn't match any rule using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
 	}
+}
+
+// formatRuleInfo formats the rule information for logging
+// For RULE-SET, it includes both the rule-set name and the matched internal rule detail
+func formatRuleInfo(rule C.Rule, metadata *C.Metadata) string {
+	ruleType := rule.RuleType().String()
+	payload := rule.Payload()
+	detail := metadata.RuleDetail
+
+	if payload == "" {
+		if detail != "" {
+			return fmt.Sprintf("%s[%s]", ruleType, detail)
+		}
+		return ruleType
+	}
+
+	if detail != "" {
+		return fmt.Sprintf("%s(%s)[%s]", ruleType, payload, detail)
+	}
+	return fmt.Sprintf("%s(%s)", ruleType, payload)
 }
 
 func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, error) {

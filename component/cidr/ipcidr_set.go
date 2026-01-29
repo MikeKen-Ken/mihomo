@@ -46,6 +46,27 @@ func (set *IpCidrSet) IsContain(ip netip.Addr) bool {
 	return set.ToIPSet().Contains(ip.WithZone(""))
 }
 
+// IsContainWithPrefix checks if the IP is contained in the set and returns the matching prefix.
+func (set *IpCidrSet) IsContainWithPrefix(ip netip.Addr) (bool, netip.Prefix) {
+	ip = ip.WithZone("")
+	ipSet := set.ToIPSet()
+	if !ipSet.Contains(ip) {
+		return false, netip.Prefix{}
+	}
+	// Find the matching range and return its prefix
+	for _, r := range set.rr {
+		if r.Contains(ip) {
+			// Return the first matching prefix from this range
+			for _, prefix := range r.Prefixes() {
+				if prefix.Contains(ip) {
+					return true, prefix
+				}
+			}
+		}
+	}
+	return true, netip.Prefix{}
+}
+
 // MatchIp implements C.IpMatcher
 func (set *IpCidrSet) MatchIp(ip netip.Addr) bool {
 	if set.IsEmpty() {

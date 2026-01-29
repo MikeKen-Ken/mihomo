@@ -24,6 +24,8 @@ type Base struct {
 
 func (b *Base) ProviderNames() []string { return nil }
 
+func (b *Base) MatchDetail() string { return "" }
+
 func ParseParams(params []string) (isSrc bool, noResolve bool) {
 	isSrc = slices.Contains(params, Src)
 	if isSrc {

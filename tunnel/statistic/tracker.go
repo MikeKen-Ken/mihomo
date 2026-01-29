@@ -31,6 +31,7 @@ type TrackerInfo struct {
 	ProviderChain C.Chain      `json:"providerChains"`
 	Rule          string       `json:"rule"`
 	RulePayload   string       `json:"rulePayload"`
+	RuleDetail    string       `json:"ruleDetail,omitempty"` // detailed match info for RULE-SET (e.g., "DOMAIN-SUFFIX,example.com")
 }
 
 type tcpTracker struct {
@@ -147,6 +148,7 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 	if rule != nil {
 		t.TrackerInfo.Rule = rule.RuleType().String()
 		t.TrackerInfo.RulePayload = rule.Payload()
+		t.TrackerInfo.RuleDetail = metadata.RuleDetail
 	}
 
 	manager.Join(t)
@@ -239,6 +241,7 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 	if rule != nil {
 		ut.TrackerInfo.Rule = rule.RuleType().String()
 		ut.TrackerInfo.RulePayload = rule.Payload()
+		ut.TrackerInfo.RuleDetail = metadata.RuleDetail
 	}
 
 	manager.Join(ut)

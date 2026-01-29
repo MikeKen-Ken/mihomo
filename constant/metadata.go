@@ -201,6 +201,9 @@ type Metadata struct {
 	RawDstAddr net.Addr `json:"-"`
 	// Only domain rule
 	SniffHost string `json:"sniffHost"`
+	// RuleDetail stores the detailed match information for RULE-SET
+	// e.g., "DOMAIN-SUFFIX,example.com" when matched by a domain rule inside a rule-set
+	RuleDetail string `json:"-"`
 }
 
 func (m *Metadata) RemoteAddress() string {

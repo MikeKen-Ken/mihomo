@@ -126,6 +126,9 @@ type Rule interface {
 	Adapter() string
 	Payload() string
 	ProviderNames() []string
+	// MatchDetail returns the detail of the last match (e.g., "DOMAIN-SUFFIX,example.com" for a rule-set)
+	// Returns empty string for most rule types, mainly used for RULE-SET to return the internal matched rule
+	MatchDetail() string
 }
 
 type RuleWrapper interface {

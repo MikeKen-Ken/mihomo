@@ -30,7 +30,11 @@ func (rs *RuleSet) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, 
 		} else if rs.noResolveIP {
 			helper.ResolveIP = nil
 		}
-		return provider.Match(metadata, helper), rs.adapter
+		matched, detail := provider.Match(metadata, helper)
+		if matched {
+			metadata.RuleDetail = detail
+		}
+		return matched, rs.adapter
 	}
 	return false, ""
 }

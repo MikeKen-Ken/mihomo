@@ -23,8 +23,15 @@ func (d *domainStrategy) Behavior() P.RuleBehavior {
 	return P.Domain
 }
 
-func (d *domainStrategy) Match(metadata *C.Metadata, helper C.RuleMatchHelper) bool {
-	return d.domainSet != nil && d.domainSet.Has(metadata.RuleHost())
+func (d *domainStrategy) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, string) {
+	if d.domainSet == nil {
+		return false, ""
+	}
+	matched, matchedRule := d.domainSet.HasWithMatch(metadata.RuleHost())
+	if matched {
+		return true, "DOMAIN-SUFFIX," + matchedRule
+	}
+	return false, ""
 }
 
 func (d *domainStrategy) Count() int {
