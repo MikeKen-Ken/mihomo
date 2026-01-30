@@ -105,9 +105,14 @@ func (f *Fallback) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 
 func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 	proxies := f.GetProxies(touch)
+	timeoutMs := f.TestTimeout
+	if timeoutMs <= 0 {
+		timeoutMs = 5000
+	}
 	for _, proxy := range proxies {
 		if len(f.selected) == 0 {
-			if proxy.AliveForTestUrl(f.testUrl) {
+			// Only use proxy if alive and delay is within group timeout
+			if proxy.AliveForTestUrl(f.testUrl) && proxy.LastDelayForTestUrl(f.testUrl) <= uint16(timeoutMs) {
 				return proxy
 			}
 		} else {
