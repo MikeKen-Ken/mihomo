@@ -167,6 +167,11 @@ func (f *Fallback) ForceSet(name string) {
 	f.selected = name
 }
 
+// ClearManualSelection clears the fixed selected node so the group auto-picks first alive.
+func (f *Fallback) ClearManualSelection() {
+	f.selected = ""
+}
+
 func (f *Fallback) Providers() []P.ProxyProvider {
 	return f.providers
 }

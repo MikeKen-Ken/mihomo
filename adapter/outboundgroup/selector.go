@@ -109,6 +109,14 @@ func (s *Selector) ForceSet(name string) {
 	s.selected = name
 }
 
+// ClearManualSelection resets selection to the first proxy so no node is "manually selected".
+func (s *Selector) ClearManualSelection() {
+	proxies := s.GetProxies(false)
+	if len(proxies) > 0 {
+		s.selected = proxies[0].Name()
+	}
+}
+
 // Unwrap implements C.ProxyAdapter
 func (s *Selector) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 	return s.selectedProxy(touch)

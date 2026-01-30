@@ -29,6 +29,14 @@ type SelectAble interface {
 	ForceSet(name string)
 }
 
+// ClearManualSelectionAble is implemented by groups that remember a manual selection.
+// When health check (测速) is triggered, clearing means "all nodes not manually selected".
+type ClearManualSelectionAble interface {
+	ClearManualSelection()
+}
+
 var _ SelectAble = (*Fallback)(nil)
 var _ SelectAble = (*URLTest)(nil)
 var _ SelectAble = (*Selector)(nil)
+var _ ClearManualSelectionAble = (*Selector)(nil)
+var _ ClearManualSelectionAble = (*Fallback)(nil)
