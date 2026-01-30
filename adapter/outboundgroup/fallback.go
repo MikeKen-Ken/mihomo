@@ -135,6 +135,19 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 		}
 	}
 
+	// No proxy is alive within timeout: use the one with minimum delay (least bad) instead of always the first
+	var best C.Proxy
+	minDelay := uint16(0xffff)
+	for _, proxy := range proxies {
+		d := proxy.LastDelayForTestUrl(f.testUrl)
+		if d < minDelay {
+			minDelay = d
+			best = proxy
+		}
+	}
+	if best != nil {
+		return best
+	}
 	return proxies[0]
 }
 
