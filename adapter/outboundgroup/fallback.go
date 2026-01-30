@@ -15,12 +15,13 @@ import (
 
 type Fallback struct {
 	*GroupBase
-	disableUDP     bool
-	testUrl        string
-	selected       string
-	expectedStatus string
-	Hidden         bool
-	Icon           string
+	disableUDP      bool
+	testUrl         string
+	selected        string
+	expectedStatus  string
+	selectedTimeout int // ms, for selected node only; 0 = use same as normal (AliveForTestUrl)
+	Hidden          bool
+	Icon            string
 }
 
 func (f *Fallback) Now() string {
@@ -84,14 +85,15 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 		all = append(all, proxy.Name())
 	}
 	return json.Marshal(map[string]any{
-		"type":           f.Type().String(),
-		"now":            f.Now(),
-		"all":            all,
-		"testUrl":        f.testUrl,
+		"type":            f.Type().String(),
+		"now":             f.Now(),
+		"all":             all,
+		"testUrl":         f.testUrl,
 		"expectedStatus": f.expectedStatus,
-		"fixed":          f.selected,
-		"hidden":         f.Hidden,
-		"icon":           f.Icon,
+		"fixed":           f.selected,
+		"selectedTimeout": f.selectedTimeout,
+		"hidden":          f.Hidden,
+		"icon":            f.Icon,
 	})
 }
 
@@ -110,11 +112,20 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 			}
 		} else {
 			if proxy.Name() == f.selected {
-				if proxy.AliveForTestUrl(f.testUrl) {
-					return proxy
+				alive := false
+				if f.selectedTimeout > 0 {
+					ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(f.selectedTimeout))
+					defer cancel()
+					expectedStatus, _ := utils.NewUnsignedRanges[uint16](f.expectedStatus)
+					_, err := proxy.URLTest(ctx, f.testUrl, expectedStatus)
+					alive = err == nil
 				} else {
-					f.selected = ""
+					alive = proxy.AliveForTestUrl(f.testUrl)
 				}
+				if alive {
+					return proxy
+				}
+				f.selected = ""
 			}
 		}
 	}
@@ -171,10 +182,11 @@ func NewFallback(option *GroupCommonOption, providers []P.ProxyProvider) *Fallba
 			MaxFailedTimes:       option.MaxFailedTimes,
 			Providers:            providers,
 		}),
-		disableUDP:     option.DisableUDP,
-		testUrl:        option.URL,
-		expectedStatus: option.ExpectedStatus,
-		Hidden:         option.Hidden,
-		Icon:           option.Icon,
+		disableUDP:      option.DisableUDP,
+		testUrl:         option.URL,
+		expectedStatus:  option.ExpectedStatus,
+		selectedTimeout: option.SelectedTimeout,
+		Hidden:          option.Hidden,
+		Icon:            option.Icon,
 	}
 }

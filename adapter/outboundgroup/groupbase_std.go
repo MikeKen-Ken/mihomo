@@ -1,4 +1,4 @@
-//go:build !cfa
+//go:build !cmfa
 
 package outboundgroup
 

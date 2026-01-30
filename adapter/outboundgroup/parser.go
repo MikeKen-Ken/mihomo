@@ -30,6 +30,7 @@ type GroupCommonOption struct {
 	URL                 string   `group:"url,omitempty"`
 	Interval            int      `group:"interval,omitempty"`
 	TestTimeout           int      `group:"timeout,omitempty"`
+	SelectedTimeout      int      `group:"selected-timeout,omitempty"`
 	FailureResetInterval  int      `group:"failure-reset-interval,omitempty"`
 	MaxFailedTimes        int      `group:"max-failed-times,omitempty"`
 	Lazy                bool     `group:"lazy,omitempty"`
