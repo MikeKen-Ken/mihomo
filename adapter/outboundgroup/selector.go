@@ -4,18 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
+	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 )
 
 type Selector struct {
 	*GroupBase
-	disableUDP bool
-	selected   string
-	testUrl    string
-	Hidden     bool
-	Icon       string
+	disableUDP      bool
+	selected        string
+	testUrl         string
+	expectedStatus  string
+	selectedTimeout int // ms, for manual-selected node delay test; 0 = skip
+	Hidden         bool
+	Icon           string
 }
 
 // DialContext implements C.ProxyAdapter
@@ -78,14 +82,27 @@ func (s *Selector) Now() string {
 }
 
 func (s *Selector) Set(name string) error {
+	var selectedProxy C.Proxy
 	for _, proxy := range s.GetProxies(false) {
 		if proxy.Name() == name {
+			selectedProxy = proxy
 			s.selected = name
-			return nil
+			break
 		}
 	}
+	if selectedProxy == nil {
+		return errors.New("proxy not exist")
+	}
 
-	return errors.New("proxy not exist")
+	// 手动选择的节点用 selected-timeout 单独测速一次，便于界面显示真实延迟
+	if s.selectedTimeout > 0 && s.testUrl != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(s.selectedTimeout))
+		defer cancel()
+		expectedStatus, _ := utils.NewUnsignedRanges[uint16](s.expectedStatus)
+		_, _ = selectedProxy.URLTest(ctx, s.testUrl, expectedStatus)
+	}
+
+	return nil
 }
 
 func (s *Selector) ForceSet(name string) {
@@ -129,10 +146,12 @@ func NewSelector(option *GroupCommonOption, providers []P.ProxyProvider) *Select
 			MaxFailedTimes:       option.MaxFailedTimes,
 			Providers:            providers,
 		}),
-		selected:   "COMPATIBLE",
-		disableUDP: option.DisableUDP,
-		testUrl:    option.URL,
-		Hidden:     option.Hidden,
-		Icon:       option.Icon,
+		selected:        "COMPATIBLE",
+		disableUDP:      option.DisableUDP,
+		testUrl:         option.URL,
+		expectedStatus:  option.ExpectedStatus,
+		selectedTimeout: option.SelectedTimeout,
+		Hidden:         option.Hidden,
+		Icon:           option.Icon,
 	}
 }
