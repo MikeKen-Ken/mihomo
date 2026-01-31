@@ -941,14 +941,70 @@ func parseProxies(cfg *RawConfig) (proxies map[string]C.Proxy, providersMap map[
 		}
 		ps = append(ps, proxies[v])
 	}
-	hc := provider.NewHealthCheck(ps, C.DefaultTestURL, 5000, 0, true, nil)
+
+	// Read config values from user's proxy group config for GLOBAL group
+	globalTimeout := 5000 // default timeout in ms
+	globalSelectedTimeout := 0
+	globalURL := C.DefaultTestURL
+	globalExpectedStatus := ""
+	foundTimeout := false
+	foundSelectedTimeout := false
+	foundURL := false
+	foundExpectedStatus := false
+	for _, mapping := range groupsConfig {
+		if !foundTimeout {
+			if timeout, ok := mapping["timeout"]; ok {
+				if t, ok := timeout.(int); ok && t > 0 {
+					globalTimeout = t
+					foundTimeout = true
+				}
+			}
+		}
+		if !foundSelectedTimeout {
+			if selectedTimeout, ok := mapping["selected-timeout"]; ok {
+				if t, ok := selectedTimeout.(int); ok && t > 0 {
+					globalSelectedTimeout = t
+					foundSelectedTimeout = true
+				}
+			}
+		}
+		if !foundURL {
+			if url, ok := mapping["url"]; ok {
+				if u, ok := url.(string); ok && u != "" {
+					globalURL = u
+					foundURL = true
+				}
+			}
+		}
+		if !foundExpectedStatus {
+			if expectedStatus, ok := mapping["expected-status"]; ok {
+				switch v := expectedStatus.(type) {
+				case string:
+					globalExpectedStatus = v
+					foundExpectedStatus = true
+				case int:
+					globalExpectedStatus = fmt.Sprintf("%d", v)
+					foundExpectedStatus = true
+				}
+			}
+		}
+		if foundTimeout && foundSelectedTimeout && foundURL && foundExpectedStatus {
+			break
+		}
+	}
+
+	hc := provider.NewHealthCheck(ps, globalURL, uint(globalTimeout), 0, true, nil)
 	pd, _ := provider.NewCompatibleProvider(provider.ReservedName, ps, hc)
 	providersMap[provider.ReservedName] = pd
 
 	if !hasGlobal {
 		global := outboundgroup.NewSelector(
 			&outboundgroup.GroupCommonOption{
-				Name: "GLOBAL",
+				Name:            "GLOBAL",
+				URL:             globalURL,
+				TestTimeout:     globalTimeout,
+				SelectedTimeout: globalSelectedTimeout,
+				ExpectedStatus:  globalExpectedStatus,
 			},
 			[]P.ProxyProvider{pd},
 		)
