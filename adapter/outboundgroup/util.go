@@ -35,8 +35,16 @@ type ClearManualSelectionAble interface {
 	ClearManualSelection()
 }
 
+// NowIsManualAble is implemented by groups that can have a "manual" current selection.
+// When false, UI should not show any node as "current"; traffic still uses first/auto node.
+type NowIsManualAble interface {
+	NowIsManual() bool
+}
+
 var _ SelectAble = (*Fallback)(nil)
 var _ SelectAble = (*URLTest)(nil)
 var _ SelectAble = (*Selector)(nil)
 var _ ClearManualSelectionAble = (*Selector)(nil)
 var _ ClearManualSelectionAble = (*Fallback)(nil)
+var _ NowIsManualAble = (*Selector)(nil)
+var _ NowIsManualAble = (*Fallback)(nil)

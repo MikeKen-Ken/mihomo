@@ -185,6 +185,11 @@ func (f *Fallback) ForceSet(name string) {
 	f.selected = name
 }
 
+// NowIsManual implements NowIsManualAble.
+func (f *Fallback) NowIsManual() bool {
+	return f.selected != ""
+}
+
 // ClearManualSelection clears the fixed selected node so the group auto-picks first alive.
 func (f *Fallback) ClearManualSelection() {
 	f.selected = ""

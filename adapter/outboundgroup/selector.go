@@ -13,13 +13,14 @@ import (
 
 type Selector struct {
 	*GroupBase
-	disableUDP      bool
-	selected        string
-	testUrl         string
-	expectedStatus  string
-	selectedTimeout int // ms, for manual-selected node delay test; 0 = skip
-	Hidden         bool
-	Icon           string
+	disableUDP       bool
+	selected         string
+	manualSelected   bool // true only after user or persist Set(); cleared by ClearManualSelection/health/stop
+	testUrl          string
+	expectedStatus   string
+	selectedTimeout  int // ms, for manual-selected node delay test; 0 = skip
+	Hidden           bool
+	Icon             string
 }
 
 // DialContext implements C.ProxyAdapter
@@ -87,6 +88,7 @@ func (s *Selector) Set(name string) error {
 		if proxy.Name() == name {
 			selectedProxy = proxy
 			s.selected = name
+			s.manualSelected = true
 			break
 		}
 	}
@@ -107,6 +109,12 @@ func (s *Selector) Set(name string) error {
 
 func (s *Selector) ForceSet(name string) {
 	s.selected = name
+	s.manualSelected = true
+}
+
+// NowIsManual implements NowIsManualAble.
+func (s *Selector) NowIsManual() bool {
+	return s.manualSelected
 }
 
 // ClearManualSelection resets selection to the first proxy so no node is "manually selected".
@@ -115,6 +123,7 @@ func (s *Selector) ClearManualSelection() {
 	if len(proxies) > 0 {
 		s.selected = proxies[0].Name()
 	}
+	s.manualSelected = false
 }
 
 // Unwrap implements C.ProxyAdapter
