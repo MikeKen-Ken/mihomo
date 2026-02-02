@@ -165,18 +165,20 @@ func (f *Fallback) Set(name string) error {
 	}
 
 	f.selected = name
-	// 固定测速：选中节点时始终执行一次 URLTest，更新延迟与存活状态
-	timeoutMs := f.selectedTimeout
-	if timeoutMs <= 0 {
-		timeoutMs = f.TestTimeout
-	}
-	if timeoutMs <= 0 {
-		timeoutMs = 5000
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
-	defer cancel()
-	expectedStatus, _ := utils.NewUnsignedRanges[uint16](f.expectedStatus)
-	_, _ = p.URLTest(ctx, f.testUrl, expectedStatus)
+	// 异步测速：选中节点时在后台执行 URLTest，不阻塞返回（与安卓端体验对齐）
+	go func() {
+		timeoutMs := f.selectedTimeout
+		if timeoutMs <= 0 {
+			timeoutMs = f.TestTimeout
+		}
+		if timeoutMs <= 0 {
+			timeoutMs = 5000
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
+		defer cancel()
+		expectedStatus, _ := utils.NewUnsignedRanges[uint16](f.expectedStatus)
+		_, _ = p.URLTest(ctx, f.testUrl, expectedStatus)
+	}()
 
 	return nil
 }

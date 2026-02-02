@@ -96,12 +96,14 @@ func (s *Selector) Set(name string) error {
 		return errors.New("proxy not exist")
 	}
 
-	// 手动选择的节点用 selected-timeout 单独测速一次，便于界面显示真实延迟
+	// 异步测速：手动选择的节点在后台测速，不阻塞返回（与安卓端体验对齐）
 	if s.selectedTimeout > 0 && s.testUrl != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(s.selectedTimeout))
-		defer cancel()
-		expectedStatus, _ := utils.NewUnsignedRanges[uint16](s.expectedStatus)
-		_, _ = selectedProxy.URLTest(ctx, s.testUrl, expectedStatus)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(s.selectedTimeout))
+			defer cancel()
+			expectedStatus, _ := utils.NewUnsignedRanges[uint16](s.expectedStatus)
+			_, _ = selectedProxy.URLTest(ctx, s.testUrl, expectedStatus)
+		}()
 	}
 
 	return nil
