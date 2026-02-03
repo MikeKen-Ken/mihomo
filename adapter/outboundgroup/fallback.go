@@ -15,14 +15,13 @@ import (
 
 type Fallback struct {
 	*GroupBase
-	disableUDP       bool
-	testUrl          string
-	selected         string
-	previousSelected string // 上一次手动选择的节点，用于健康检测失败时回滚
-	expectedStatus   string
-	selectedTimeout  int // ms, for selected node only; 0 = use same as normal (AliveForTestUrl)
-	Hidden           bool
-	Icon             string
+	disableUDP      bool
+	testUrl         string
+	selected        string // 手动选择的节点；仅当用户执行「组测速」时由 ClearManualSelection 清空，健康检测/连接失败不触发 fallback
+	expectedStatus  string
+	selectedTimeout int // ms, for selected node only; 0 = use same as normal (AliveForTestUrl)
+	Hidden          bool
+	Icon            string
 }
 
 func (f *Fallback) Now() string {
@@ -160,15 +159,10 @@ func (f *Fallback) Set(name string) error {
 		return errors.New("proxy not exist")
 	}
 
-	// 保存上一次的手动选择，用于健康检测失败时回滚
-	if f.selected != "" && f.selected != name {
-		f.previousSelected = f.selected
-	}
-
-	// 立即切换到用户选择的节点
+	// 立即切换到用户选择的节点并固定使用，不因健康检测/连接失败而触发 fallback；仅当用户执行「组测速」时由 ClearManualSelection 清空
 	f.selected = name
 
-	// 异步健康检测：使用 selectedTimeout（手动选择专用超时）
+	// 异步健康检测：仅用于更新延迟显示，不根据结果修改 selected
 	go func() {
 		timeoutMs := f.selectedTimeout
 		if timeoutMs <= 0 {
@@ -180,28 +174,7 @@ func (f *Fallback) Set(name string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
 		defer cancel()
 		expectedStatus, _ := utils.NewUnsignedRanges[uint16](f.expectedStatus)
-		_, err := p.URLTest(ctx, f.testUrl, expectedStatus)
-
-		// 健康检测失败：回滚到上一次选择的节点或清空（使用 fallback 自动选择）
-		if err != nil {
-			if f.selected == name { // 确保没有被其他操作修改
-				if f.previousSelected != "" {
-					// 检查上一次选择的节点是否仍然可用
-					for _, proxy := range f.GetProxies(false) {
-						if proxy.Name() == f.previousSelected {
-							if proxy.AliveForTestUrl(f.testUrl) {
-								f.selected = f.previousSelected
-							} else {
-								f.selected = "" // 上一个也不可用，使用 fallback 自动选择
-							}
-							break
-						}
-					}
-				} else {
-					f.selected = "" // 没有上一次选择，使用 fallback 自动选择
-				}
-			}
-		}
+		_, _ = p.URLTest(ctx, f.testUrl, expectedStatus)
 	}()
 
 	return nil
