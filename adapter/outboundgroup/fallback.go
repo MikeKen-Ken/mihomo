@@ -15,13 +15,14 @@ import (
 
 type Fallback struct {
 	*GroupBase
-	disableUDP      bool
-	testUrl         string
-	selected        string
-	expectedStatus  string
-	selectedTimeout int // ms, for selected node only; 0 = use same as normal (AliveForTestUrl)
-	Hidden          bool
-	Icon            string
+	disableUDP       bool
+	testUrl          string
+	selected         string
+	previousSelected string // 上一次手动选择的节点，用于健康检测失败时回滚
+	expectedStatus   string
+	selectedTimeout  int // ms, for selected node only; 0 = use same as normal (AliveForTestUrl)
+	Hidden           bool
+	Icon             string
 }
 
 func (f *Fallback) Now() string {
@@ -109,29 +110,39 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 	if timeoutMs <= 0 {
 		timeoutMs = 5000
 	}
-	for _, proxy := range proxies {
-		if len(f.selected) == 0 {
-			// Only use proxy if alive and delay is within group timeout
-			if proxy.AliveForTestUrl(f.testUrl) && proxy.LastDelayForTestUrl(f.testUrl) <= uint16(timeoutMs) {
-				return proxy
-			}
-		} else {
+
+	// 手动选择模式：优先返回用户选择的节点
+	// 使用缓存的延迟信息判断，不进行同步测速（避免阻塞）
+	if len(f.selected) > 0 {
+		for _, proxy := range proxies {
 			if proxy.Name() == f.selected {
-				alive := false
-				if f.selectedTimeout > 0 {
-					ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(f.selectedTimeout))
-					defer cancel()
-					expectedStatus, _ := utils.NewUnsignedRanges[uint16](f.expectedStatus)
-					_, err := proxy.URLTest(ctx, f.testUrl, expectedStatus)
-					alive = err == nil
-				} else {
-					alive = proxy.AliveForTestUrl(f.testUrl)
+				// 使用 selectedTimeout 判断手动选择的节点是否可用
+				selectedTimeoutMs := f.selectedTimeout
+				if selectedTimeoutMs <= 0 {
+					selectedTimeoutMs = timeoutMs
 				}
-				if alive {
+				// 使用缓存的延迟信息判断（非阻塞）
+				lastDelay := proxy.LastDelayForTestUrl(f.testUrl)
+				// 如果延迟在阈值内，或者还没有测速结果（lastDelay == 0），则使用该节点
+				if lastDelay > 0 && lastDelay <= uint16(selectedTimeoutMs) {
 					return proxy
 				}
+				// 如果没有缓存的延迟信息，暂时信任用户选择
+				if lastDelay == 0 {
+					return proxy
+				}
+				// 延迟超过 selectedTimeout，清空手动选择，使用 fallback
 				f.selected = ""
+				break
 			}
+		}
+	}
+
+	// 自动模式：返回第一个可用的节点
+	for _, proxy := range proxies {
+		// Only use proxy if alive and delay is within group timeout
+		if proxy.AliveForTestUrl(f.testUrl) && proxy.LastDelayForTestUrl(f.testUrl) <= uint16(timeoutMs) {
+			return proxy
 		}
 	}
 
@@ -164,8 +175,15 @@ func (f *Fallback) Set(name string) error {
 		return errors.New("proxy not exist")
 	}
 
+	// 保存上一次的手动选择，用于健康检测失败时回滚
+	if f.selected != "" && f.selected != name {
+		f.previousSelected = f.selected
+	}
+
+	// 立即切换到用户选择的节点
 	f.selected = name
-	// 异步测速：选中节点时在后台执行 URLTest，不阻塞返回（与安卓端体验对齐）
+
+	// 异步健康检测：使用 selectedTimeout（手动选择专用超时）
 	go func() {
 		timeoutMs := f.selectedTimeout
 		if timeoutMs <= 0 {
@@ -177,7 +195,28 @@ func (f *Fallback) Set(name string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
 		defer cancel()
 		expectedStatus, _ := utils.NewUnsignedRanges[uint16](f.expectedStatus)
-		_, _ = p.URLTest(ctx, f.testUrl, expectedStatus)
+		_, err := p.URLTest(ctx, f.testUrl, expectedStatus)
+
+		// 健康检测失败：回滚到上一次选择的节点或清空（使用 fallback 自动选择）
+		if err != nil {
+			if f.selected == name { // 确保没有被其他操作修改
+				if f.previousSelected != "" {
+					// 检查上一次选择的节点是否仍然可用
+					for _, proxy := range f.GetProxies(false) {
+						if proxy.Name() == f.previousSelected {
+							if proxy.AliveForTestUrl(f.testUrl) {
+								f.selected = f.previousSelected
+							} else {
+								f.selected = "" // 上一个也不可用，使用 fallback 自动选择
+							}
+							break
+						}
+					}
+				} else {
+					f.selected = "" // 没有上一次选择，使用 fallback 自动选择
+				}
+			}
+		}
 	}()
 
 	return nil
