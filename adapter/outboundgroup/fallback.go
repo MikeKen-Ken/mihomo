@@ -159,7 +159,7 @@ func (f *Fallback) Set(name string) error {
 		return errors.New("proxy not exist")
 	}
 
-	// 立即切换到用户选择的节点并固定使用，不因健康检测/连接失败而触发 fallback；仅当用户执行「组测速」时由 ClearManualSelection 清空
+	// 立即切换到用户选择的节点并固定使用， 不因健康检测/连接失败而触发 fallback；仅当用户执行「组测速」时由 ClearManualSelection 清空
 	f.selected = name
 
 	// 异步健康检测：仅用于更新延迟显示，不根据结果修改 selected
