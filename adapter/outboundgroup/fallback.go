@@ -111,31 +111,16 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 		timeoutMs = 5000
 	}
 
-	// 手动选择模式：优先返回用户选择的节点
-	// 使用缓存的延迟信息判断，不进行同步测速（避免阻塞）
+	// 手动选择模式：无条件返回用户选择的节点
+	// 健康检测由 Set() 的异步 goroutine 负责，这里不阻止用户的选择
 	if len(f.selected) > 0 {
 		for _, proxy := range proxies {
 			if proxy.Name() == f.selected {
-				// 使用 selectedTimeout 判断手动选择的节点是否可用
-				selectedTimeoutMs := f.selectedTimeout
-				if selectedTimeoutMs <= 0 {
-					selectedTimeoutMs = timeoutMs
-				}
-				// 使用缓存的延迟信息判断（非阻塞）
-				lastDelay := proxy.LastDelayForTestUrl(f.testUrl)
-				// 如果延迟在阈值内，或者还没有测速结果（lastDelay == 0），则使用该节点
-				if lastDelay > 0 && lastDelay <= uint16(selectedTimeoutMs) {
-					return proxy
-				}
-				// 如果没有缓存的延迟信息，暂时信任用户选择
-				if lastDelay == 0 {
-					return proxy
-				}
-				// 延迟超过 selectedTimeout，清空手动选择，使用 fallback
-				f.selected = ""
-				break
+				return proxy // 直接返回，不检查延迟或健康状态
 			}
 		}
+		// 选择的节点不存在于列表中（可能被移除），清空选择
+		f.selected = ""
 	}
 
 	// 自动模式：返回第一个可用的节点
