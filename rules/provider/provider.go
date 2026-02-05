@@ -41,6 +41,7 @@ type providerForApi struct {
 	VehicleType string    `json:"vehicleType"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 	Payload     []string  `json:"payload,omitempty"`
+	Url         string   `json:"url,omitempty"`
 }
 
 type ruleStrategy interface {
@@ -108,6 +109,10 @@ func (rp *ruleSetProvider) Update() error {
 }
 
 func (rp *ruleSetProvider) MarshalJSON() ([]byte, error) {
+	url := ""
+	if rp.Fetcher != nil && rp.Fetcher.Vehicle() != nil {
+		url = rp.Fetcher.Vehicle().Url()
+	}
 	return json.Marshal(
 		providerForApi{
 			Behavior:    rp.behavior.String(),
@@ -117,6 +122,7 @@ func (rp *ruleSetProvider) MarshalJSON() ([]byte, error) {
 			Type:        rp.Type().String(),
 			UpdatedAt:   rp.UpdatedAt(),
 			VehicleType: rp.VehicleType().String(),
+			Url:         url,
 		})
 }
 
