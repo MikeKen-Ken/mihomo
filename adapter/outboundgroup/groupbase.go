@@ -270,6 +270,10 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 		if gb.failedTimes == 1 {
 			log.Debugln("ProxyGroup: %s first failed", gb.Name())
 			gb.failedTime = time.Now()
+			if gb.failedTimes >= gb.maxFailedTimes {
+				log.Warnln("because %s failed multiple times, active health check", gb.Name())
+				fn()
+			}
 		} else {
 			if time.Since(gb.failedTime) > time.Duration(gb.failureResetInterval)*time.Millisecond {
 				gb.failedTimes = 0
