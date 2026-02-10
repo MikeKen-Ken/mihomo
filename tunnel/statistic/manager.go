@@ -58,6 +58,34 @@ func (m *Manager) Range(f func(c Tracker) bool) {
 	})
 }
 
+// CloseConnectionsExcludingDirect closes all tracked connections whose chain does not contain DIRECT,
+// so traffic is re-established with the new node (e.g. after fallback group health check).
+func (m *Manager) CloseConnectionsExcludingDirect() {
+	var toClose []string
+	m.Range(func(c Tracker) bool {
+		info := c.Info()
+		if info == nil {
+			return true
+		}
+		hasDirect := false
+		for _, name := range info.Chain {
+			if name == "DIRECT" {
+				hasDirect = true
+				break
+			}
+		}
+		if !hasDirect {
+			toClose = append(toClose, c.ID())
+		}
+		return true
+	})
+	for _, id := range toClose {
+		if c := m.Get(id); c != nil {
+			_ = c.Close()
+		}
+	}
+}
+
 func (m *Manager) PushUploaded(size int64) {
 	m.uploadTemp.Add(size)
 	m.uploadTotal.Add(size)
