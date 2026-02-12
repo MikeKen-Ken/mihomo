@@ -1,6 +1,6 @@
 module github.com/metacubex/mihomo
 
-go 1.20
+go 1.26
 
 require (
 	filippo.io/edwards25519 v1.1.0

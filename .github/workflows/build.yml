@@ -29,7 +29,7 @@ jobs:
     strategy:
       matrix:
         jobs:
-          # Windows 11 等现代 PC：64 位、Go 1.25、AMD64 v3
+          # Windows 11 等现代 PC：64 位、Go 1.26、AMD64 v3
           - { goos: windows, goarch: amd64, goamd64: v3, output: amd64 }
 
           # 现代安卓（小米等）：arm64-v8
@@ -41,7 +41,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.25'
+        go-version: '1.26'
         check-latest: true
 
     - name: Set variables
