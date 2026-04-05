@@ -120,7 +120,7 @@ func router(isDebug bool, secret string, dohServer string, cors Cors) *chi.Mux {
 		}
 		r.Get("/", hello)
 		r.Get("/logs", getLogs)
-		r.Get("/traffic", traffic)
+		r.Mount("/traffic", trafficRouter())
 		r.Get("/memory", memory)
 		r.Get("/version", version)
 		r.Mount("/configs", configRouter())
@@ -357,6 +357,19 @@ func authentication(secret string) func(http.Handler) http.Handler {
 
 func hello(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, render.M{"hello": "mihomo"})
+}
+
+func trafficRouter() chi.Router {
+	r := chi.NewRouter()
+	r.Get("/", traffic)
+	r.Post("/reset", resetTraffic)
+	return r
+}
+
+func resetTraffic(w http.ResponseWriter, r *http.Request) {
+	statistic.DefaultManager.ResetStatistic()
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, map[string]string{"message": "Traffic statistics reset successfully"})
 }
 
 func traffic(w http.ResponseWriter, r *http.Request) {

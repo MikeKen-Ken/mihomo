@@ -100,6 +100,8 @@ func (m *Manager) Now() (up int64, down int64) {
 	return m.uploadBlip.Load(), m.downloadBlip.Load()
 }
 
+// Total is upload/download summed over connections whose leaf is not DIRECT/COMPATIBLE (chain.go).
+// Per-connection stats in TrackerInfo are unchanged.
 func (m *Manager) Total() (up, down int64) {
 	return m.uploadTotal.Load(), m.downloadTotal.Load()
 }
