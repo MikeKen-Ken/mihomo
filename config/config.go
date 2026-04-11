@@ -453,6 +453,8 @@ type RawConfig struct {
 	Sniffer       RawSniffer                `yaml:"sniffer" json:"sniffer"`
 	TLS           RawTLS                    `yaml:"tls" json:"tls"`
 
+	CfaProxyDelayTestTimeoutMs int `yaml:"cfa-proxy-delay-test-timeout-ms,omitempty" json:"cfa-proxy-delay-test-timeout-ms,omitempty"`
+
 	ClashForAndroid RawClashForAndroid `yaml:"clash-for-android" json:"clash-for-android"`
 }
 
