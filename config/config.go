@@ -253,6 +253,7 @@ type RawFallbackFilter struct {
 type RawClashForAndroid struct {
 	AppendSystemDNS   bool   `yaml:"append-system-dns" json:"append-system-dns"`
 	UiSubtitlePattern string `yaml:"ui-subtitle-pattern" json:"ui-subtitle-pattern"`
+	LanBlockedDevices []string `yaml:"lan-blocked-devices" json:"lan-blocked-devices"`
 }
 
 type RawNTP struct {
@@ -605,6 +606,7 @@ func UnmarshalRawConfig(buf []byte) (*RawConfig, error) {
 func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 	config := &Config{}
 	startTime := time.Now()
+	rawCfg.Rule = prependBlockedDeviceRules(rawCfg.Rule, rawCfg.ClashForAndroid.LanBlockedDevices)
 
 	general, err := parseGeneral(rawCfg)
 	if err != nil {
@@ -732,6 +734,40 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 	log.Debugln("Initial configuration complete, total time: %dms", elapsedTime)
 
 	return config, nil
+}
+
+func prependBlockedDeviceRules(rules []string, blockedDevices []string) []string {
+	if len(blockedDevices) == 0 {
+		return rules
+	}
+
+	prefixRules := make([]string, 0, len(blockedDevices))
+	existing := make(map[string]struct{}, len(rules))
+	for _, rule := range rules {
+		existing[rule] = struct{}{}
+	}
+
+	for _, device := range blockedDevices {
+		ip := strings.TrimSpace(device)
+		if ip == "" {
+			continue
+		}
+		cidr := ip
+		if !strings.Contains(cidr, "/") {
+			cidr += "/32"
+		}
+		rule := fmt.Sprintf("SRC-IP-CIDR,%s,REJECT-DROP", cidr)
+		if _, ok := existing[rule]; ok {
+			continue
+		}
+		existing[rule] = struct{}{}
+		prefixRules = append(prefixRules, rule)
+	}
+
+	if len(prefixRules) == 0 {
+		return rules
+	}
+	return append(prefixRules, rules...)
 }
 
 //go:linkname temporaryUpdateGeneral
