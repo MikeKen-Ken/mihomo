@@ -6,14 +6,6 @@ on:
         description: "Tag version to release"
         required: true
   push:
-    paths-ignore:
-      - "docs/**"
-      - "README.md"
-      - ".github/ISSUE_TEMPLATE/**"
-    branches:
-      - Alpha
-    tags:
-      - "v*"
   pull_request:
     branches:
       - Alpha
@@ -138,7 +130,7 @@ jobs:
       uses: 8Mi-Tech/delete-release-assets-action@main
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        tag: Prerelease-${{ github.ref_name }}
+        tag: Prerelease-Alpha
         deleteOnlyFromDrafts: false
     - name: Set Env
       run: |
@@ -148,7 +140,7 @@ jobs:
     - name: Tag Repo
       uses: richardsimko/update-tag@v1
       with:
-        tag_name: Prerelease-${{ github.ref_name }}
+        tag_name: Prerelease-Alpha
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
@@ -166,7 +158,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       if: ${{  success() }}
       with:
-        tag_name: Prerelease-${{ github.ref_name }}
+        tag_name: Prerelease-Alpha
         files: |
           bin/*
         prerelease: true
