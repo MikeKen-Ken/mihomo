@@ -132,27 +132,12 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         tag: Prerelease-Alpha
         deleteOnlyFromDrafts: false
-    - name: Set Env
-      run: |
-        echo "BUILDTIME=$(TZ=Asia/Shanghai date)" >> $GITHUB_ENV
-      shell: bash
-
     - name: Tag Repo
       uses: richardsimko/update-tag@v1
       with:
         tag_name: Prerelease-Alpha
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
-    - run: |
-        cat > release.txt << 'EOF'
-        Release created at  ${{ env.BUILDTIME }}
-        Synchronize ${{ github.ref_name }} branch code updates, keeping only the latest version
-        <br>
-        [我应该下载哪个文件? / Which file should I download?](https://github.com/MetaCubeX/mihomo/wiki/FAQ)
-        [二进制文件筛选 / Binary file selector](https://metacubex.github.io/Meta-Docs/startup/#_1)
-        [查看文档 / Docs](https://metacubex.github.io/Meta-Docs/)
-        EOF
 
     - name: Upload Prerelease
       uses: softprops/action-gh-release@v1
@@ -162,8 +147,8 @@ jobs:
         files: |
           bin/*
         prerelease: true
-        generate_release_notes: true
-        body_path: release.txt
+        generate_release_notes: false
+        body: ""
 
   Upload-Release:
     permissions: write-all
