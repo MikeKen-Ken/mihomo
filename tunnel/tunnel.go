@@ -291,14 +291,14 @@ func isLanSourceIP(addr netip.Addr) bool {
 		return false
 	}
 	addr = addr.Unmap()
-	if !addr.Is4() {
+	if addr.IsLoopback() || addr.IsUnspecified() || addr.IsMulticast() {
 		return false
 	}
-	// Exclude loopback and link-local
-	if addr.IsLoopback() || addr.IsLinkLocalUnicast() {
-		return false
+	if addr.IsPrivate() {
+		return true
 	}
-	return addr.IsPrivate()
+	// IPv6 link-local can also represent LAN devices.
+	return addr.Is6() && addr.IsLinkLocalUnicast()
 }
 
 func checkLanDeviceLimit(sourceIP netip.Addr) bool {
@@ -495,12 +495,6 @@ func handleUDPConn(packet C.PacketAdapter) {
 		log.Debugln("[Metadata PreHandle] error: %s", err)
 		return
 	}
-	if !checkLanDeviceLimit(metadata.SrcIP) {
-		packet.Drop()
-		logLanDeviceOverLimit(metadata)
-		return
-	}
-
 	key := packet.Key()
 	sender, loaded := natTable.GetOrCreate(key, func() C.PacketSender {
 		sender := newPacketSender()
@@ -510,6 +504,15 @@ func handleUDPConn(packet C.PacketAdapter) {
 		return sender
 	})
 	if !loaded {
+		// For UDP, check device limit only when creating a new NAT session,
+		// avoiding per-packet scans under high PPS traffic.
+		if !checkLanDeviceLimit(metadata.SrcIP) {
+			packet.Drop()
+			logLanDeviceOverLimit(metadata)
+			sender.Close()
+			natTable.Delete(key)
+			return
+		}
 		dial := func() (C.PacketConn, C.WriteBackProxy, error) {
 			originMetadata := metadata  // save origin metadata
 			metadata = metadata.Clone() // don't modify PacketAdapter's metadata
