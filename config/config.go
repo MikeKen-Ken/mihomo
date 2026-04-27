@@ -66,6 +66,8 @@ type General struct {
 	KeepAliveIdle           int                     `json:"keep-alive-idle"`
 	KeepAliveInterval       int                     `json:"keep-alive-interval"`
 	DisableKeepAlive        bool                    `json:"disable-keep-alive"`
+	LanMaxDevices           int                     `json:"lan-max-devices"`
+	LanOverLimitAction      string                  `json:"lan-over-limit-action"`
 }
 
 // Inbound config
@@ -254,6 +256,8 @@ type RawClashForAndroid struct {
 	AppendSystemDNS   bool   `yaml:"append-system-dns" json:"append-system-dns"`
 	UiSubtitlePattern string `yaml:"ui-subtitle-pattern" json:"ui-subtitle-pattern"`
 	LanBlockedDevices []string `yaml:"lan-blocked-devices" json:"lan-blocked-devices"`
+	LanMaxDevices int `yaml:"lan-max-devices" json:"lan-max-devices"`
+	LanOverLimitAction string `yaml:"lan-over-limit-action" json:"lan-over-limit-action"`
 }
 
 type RawNTP struct {
@@ -774,6 +778,12 @@ func prependBlockedDeviceRules(rules []string, blockedDevices []string) []string
 func temporaryUpdateGeneral(general *General) func()
 
 func parseGeneral(cfg *RawConfig) (*General, error) {
+	lanMaxDevices := cfg.ClashForAndroid.LanMaxDevices
+	if lanMaxDevices < 0 {
+		lanMaxDevices = 0
+	}
+	lanOverLimitAction := strings.ToLower(strings.TrimSpace(cfg.ClashForAndroid.LanOverLimitAction))
+
 	return &General{
 		Inbound: Inbound{
 			Port:              cfg.Port,
@@ -816,6 +826,8 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 		KeepAliveIdle:           cfg.KeepAliveIdle,
 		KeepAliveInterval:       cfg.KeepAliveInterval,
 		DisableKeepAlive:        cfg.DisableKeepAlive,
+		LanMaxDevices:           lanMaxDevices,
+		LanOverLimitAction:      lanOverLimitAction,
 	}, nil
 }
 

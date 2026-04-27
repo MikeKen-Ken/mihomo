@@ -180,6 +180,8 @@ func GetGeneral() *config.General {
 		KeepAliveInterval:       int(keepalive.KeepAliveInterval() / time.Second),
 		KeepAliveIdle:           int(keepalive.KeepAliveIdle() / time.Second),
 		DisableKeepAlive:        keepalive.DisableKeepAlive(),
+		LanMaxDevices:           tunnel.LanMaxDevices(),
+		LanOverLimitAction:      tunnel.LanOverLimitAction(),
 	}
 
 	return general
@@ -404,6 +406,7 @@ func updateGeneral(general *config.General, logging bool) {
 	keepalive.SetKeepAliveIdle(time.Duration(general.KeepAliveIdle) * time.Second)
 	keepalive.SetKeepAliveInterval(time.Duration(general.KeepAliveInterval) * time.Second)
 	keepalive.SetDisableKeepAlive(general.DisableKeepAlive)
+	tunnel.SetLanDeviceLimit(general.LanMaxDevices, general.LanOverLimitAction)
 
 	adapter.UnifiedDelay.Store(general.UnifiedDelay)
 

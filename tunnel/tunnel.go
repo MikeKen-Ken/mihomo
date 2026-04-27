@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	syncatomic "sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
@@ -60,6 +61,9 @@ var (
 	udpTimeout = 60 * time.Second
 
 	findProcessMode = atomic.NewInt32Enum(process.FindProcessStrict)
+	lanMaxDevices   int32
+	// 0 = reject, 1 = drop
+	lanOverLimitAction int32
 
 	snifferDispatcher *sniffer.Dispatcher
 	sniffingEnable    = false
@@ -259,6 +263,81 @@ func SetFindProcessMode(mode process.FindProcessMode) {
 	findProcessMode.Store(mode)
 }
 
+func SetLanDeviceLimit(limit int, action string) {
+	if limit < 0 {
+		limit = 0
+	}
+	syncatomic.StoreInt32(&lanMaxDevices, int32(limit))
+	if strings.EqualFold(strings.TrimSpace(action), "drop") {
+		syncatomic.StoreInt32(&lanOverLimitAction, 1)
+		return
+	}
+	syncatomic.StoreInt32(&lanOverLimitAction, 0)
+}
+
+func LanMaxDevices() int {
+	return int(syncatomic.LoadInt32(&lanMaxDevices))
+}
+
+func LanOverLimitAction() string {
+	if syncatomic.LoadInt32(&lanOverLimitAction) == 1 {
+		return "drop"
+	}
+	return "reject"
+}
+
+func isLanSourceIP(addr netip.Addr) bool {
+	if !addr.IsValid() {
+		return false
+	}
+	addr = addr.Unmap()
+	if !addr.Is4() {
+		return false
+	}
+	// Exclude loopback and link-local
+	if addr.IsLoopback() || addr.IsLinkLocalUnicast() {
+		return false
+	}
+	return addr.IsPrivate()
+}
+
+func checkLanDeviceLimit(sourceIP netip.Addr) bool {
+	limit := int(syncatomic.LoadInt32(&lanMaxDevices))
+	if limit <= 0 || !isLanSourceIP(sourceIP) {
+		return true
+	}
+	sourceIP = sourceIP.Unmap()
+	deviceSet := make(map[netip.Addr]struct{}, limit+1)
+	alreadyTracked := false
+	statistic.DefaultManager.Range(func(c statistic.Tracker) bool {
+		info := c.Info()
+		if info == nil || info.Metadata == nil {
+			return true
+		}
+		ip := info.Metadata.SrcIP.Unmap()
+		if !isLanSourceIP(ip) {
+			return true
+		}
+		deviceSet[ip] = struct{}{}
+		if ip == sourceIP {
+			alreadyTracked = true
+		}
+		return true
+	})
+	if alreadyTracked {
+		return true
+	}
+	return len(deviceSet) < limit
+}
+
+func logLanDeviceOverLimit(metadata *C.Metadata) {
+	if syncatomic.LoadInt32(&lanOverLimitAction) == 1 {
+		log.Warnln("[LAN Device Limit] drop over-limit device source=%s limit=%d", metadata.SourceAddress(), LanMaxDevices())
+		return
+	}
+	log.Warnln("[LAN Device Limit] reject over-limit device source=%s limit=%d", metadata.SourceAddress(), LanMaxDevices())
+}
+
 func isHandle(t C.Type) bool {
 	status := status.Load()
 	return status == Running || (status == Inner && t == C.INNER)
@@ -416,6 +495,11 @@ func handleUDPConn(packet C.PacketAdapter) {
 		log.Debugln("[Metadata PreHandle] error: %s", err)
 		return
 	}
+	if !checkLanDeviceLimit(metadata.SrcIP) {
+		packet.Drop()
+		logLanDeviceOverLimit(metadata)
+		return
+	}
 
 	key := packet.Key()
 	sender, loaded := natTable.GetOrCreate(key, func() C.PacketSender {
@@ -517,6 +601,10 @@ func handleTCPConn(connCtx C.ConnContext) {
 	if preHandleFailed {
 		log.Debugln("[Metadata PreHandle] failed to sniff a domain for connection %s --> %s, give up",
 			metadata.SourceDetail(), metadata.RemoteAddress())
+		return
+	}
+	if !checkLanDeviceLimit(metadata.SrcIP) {
+		logLanDeviceOverLimit(metadata)
 		return
 	}
 
