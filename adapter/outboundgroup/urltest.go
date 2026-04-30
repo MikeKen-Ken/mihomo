@@ -63,13 +63,14 @@ func (u *URLTest) ForceSet(name string) {
 func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := u.fast(true)
 	c, err = proxy.DialContext(ctx, metadata)
+	needHandshake := err == nil && N.NeedHandshake(c)
 	if err == nil {
 		c.AppendToChains(u)
 	} else {
 		u.onDialFailed(proxy.Type(), err, u.healthCheck)
 	}
 
-	if N.NeedHandshake(c) {
+	if needHandshake {
 		c = callback.NewFirstWriteCallBackConn(c, func(err error) {
 			if err == nil {
 				u.onDialSuccess()
@@ -77,6 +78,9 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 				u.onDialFailed(proxy.Type(), err, u.healthCheck)
 			}
 		})
+	}
+	if err == nil {
+		c = u.observePostConnectFailure(c, proxy.Type(), needHandshake, u.healthCheck)
 	}
 
 	return c, err

@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter/outbound"
 	"github.com/metacubex/mihomo/common/atomic"
+	"github.com/metacubex/mihomo/common/buf"
+	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
@@ -328,3 +332,102 @@ func (gb *GroupBase) onDialSuccess() {
 		gb.failedTimes = 0
 	}
 }
+
+type postConnectFailureConn struct {
+	C.Conn
+	callback       func(error)
+	once           sync.Once
+	writeMux       sync.Mutex
+	written        bool
+	skipFirstWrite bool
+}
+
+func (c *postConnectFailureConn) notify(err error) {
+	if !isPostConnectFailure(err) {
+		return
+	}
+	c.once.Do(func() {
+		c.callback(err)
+	})
+}
+
+func (c *postConnectFailureConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	c.notify(err)
+	return n, err
+}
+
+func (c *postConnectFailureConn) ReadBuffer(buffer *buf.Buffer) error {
+	err := c.Conn.ReadBuffer(buffer)
+	c.notify(err)
+	return err
+}
+
+func (c *postConnectFailureConn) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	if c.shouldNotifyWrite() {
+		c.notify(err)
+	}
+	return n, err
+}
+
+func (c *postConnectFailureConn) WriteBuffer(buffer *buf.Buffer) error {
+	err := c.Conn.WriteBuffer(buffer)
+	if c.shouldNotifyWrite() {
+		c.notify(err)
+	}
+	return err
+}
+
+func (c *postConnectFailureConn) Upstream() any {
+	return c.Conn
+}
+
+func (c *postConnectFailureConn) ReaderReplaceable() bool {
+	return false
+}
+
+func (c *postConnectFailureConn) WriterReplaceable() bool {
+	return false
+}
+
+func (c *postConnectFailureConn) shouldNotifyWrite() bool {
+	c.writeMux.Lock()
+	defer c.writeMux.Unlock()
+
+	if !c.written {
+		c.written = true
+		return !c.skipFirstWrite
+	}
+	return true
+}
+
+func (gb *GroupBase) observePostConnectFailure(c C.Conn, adapterType C.AdapterType, skipFirstWrite bool, fn func()) C.Conn {
+	return &postConnectFailureConn{
+		Conn:           c,
+		skipFirstWrite: skipFirstWrite,
+		callback: func(err error) {
+			gb.onDialFailed(adapterType, err, fn)
+		},
+	}
+}
+
+func isPostConnectFailure(err error) bool {
+	if err == nil || errors.Is(err, io.EOF) {
+		return false
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "i/o timeout") ||
+		strings.Contains(msg, "forcibly closed by the remote host") ||
+		strings.Contains(msg, "connection aborted")
+}
+
+var _ N.ExtendedConn = (*postConnectFailureConn)(nil)

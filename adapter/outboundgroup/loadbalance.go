@@ -89,6 +89,7 @@ func jumpHash(key uint64, buckets int32) int32 {
 func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := lb.Unwrap(metadata, true)
 	c, err = proxy.DialContext(ctx, metadata)
+	needHandshake := err == nil && N.NeedHandshake(c)
 
 	if err == nil {
 		c.AppendToChains(lb)
@@ -96,7 +97,7 @@ func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c
 		lb.onDialFailed(proxy.Type(), err, lb.healthCheck)
 	}
 
-	if N.NeedHandshake(c) {
+	if needHandshake {
 		c = callback.NewFirstWriteCallBackConn(c, func(err error) {
 			if err == nil {
 				lb.onDialSuccess()
@@ -104,6 +105,9 @@ func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c
 				lb.onDialFailed(proxy.Type(), err, lb.healthCheck)
 			}
 		})
+	}
+	if err == nil {
+		c = lb.observePostConnectFailure(c, proxy.Type(), needHandshake, lb.healthCheck)
 	}
 
 	return
