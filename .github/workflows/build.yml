@@ -1,10 +1,6 @@
 name: Build
 on:
   workflow_dispatch:
-  push:
-  pull_request:
-    branches:
-      - Alpha
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
