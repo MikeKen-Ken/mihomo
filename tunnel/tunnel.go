@@ -64,12 +64,20 @@ var (
 	lanMaxDevices   int32
 	// 0 = reject, 1 = drop
 	lanOverLimitAction int32
+	lanDeviceLimitCache = struct {
+		sync.Mutex
+		expires time.Time
+		limit   int
+		devices map[netip.Addr]struct{}
+	}{}
 
 	snifferDispatcher *sniffer.Dispatcher
 	sniffingEnable    = false
 
 	ruleUpdateCallback = utils.NewCallback[P.RuleProvider]()
 )
+
+const lanDeviceLimitCacheTTL = time.Second
 
 type tunnel struct{}
 
@@ -268,11 +276,20 @@ func SetLanDeviceLimit(limit int, action string) {
 		limit = 0
 	}
 	syncatomic.StoreInt32(&lanMaxDevices, int32(limit))
+	invalidateLanDeviceLimitCache()
 	if strings.EqualFold(strings.TrimSpace(action), "drop") {
 		syncatomic.StoreInt32(&lanOverLimitAction, 1)
 		return
 	}
 	syncatomic.StoreInt32(&lanOverLimitAction, 0)
+}
+
+func invalidateLanDeviceLimitCache() {
+	lanDeviceLimitCache.Lock()
+	lanDeviceLimitCache.expires = time.Time{}
+	lanDeviceLimitCache.limit = 0
+	lanDeviceLimitCache.devices = nil
+	lanDeviceLimitCache.Unlock()
 }
 
 func LanMaxDevices() int {
@@ -307,6 +324,26 @@ func checkLanDeviceLimit(sourceIP netip.Addr) bool {
 		return true
 	}
 	sourceIP = sourceIP.Unmap()
+
+	now := time.Now()
+	lanDeviceLimitCache.Lock()
+	if lanDeviceLimitCache.devices != nil &&
+		lanDeviceLimitCache.limit == limit &&
+		now.Before(lanDeviceLimitCache.expires) {
+		if _, ok := lanDeviceLimitCache.devices[sourceIP]; ok {
+			lanDeviceLimitCache.Unlock()
+			return true
+		}
+		if len(lanDeviceLimitCache.devices) < limit {
+			lanDeviceLimitCache.devices[sourceIP] = struct{}{}
+			lanDeviceLimitCache.Unlock()
+			return true
+		}
+		lanDeviceLimitCache.Unlock()
+		return false
+	}
+	lanDeviceLimitCache.Unlock()
+
 	deviceSet := make(map[netip.Addr]struct{}, limit+1)
 	alreadyTracked := false
 	statistic.DefaultManager.Range(func(c statistic.Tracker) bool {
@@ -325,9 +362,23 @@ func checkLanDeviceLimit(sourceIP netip.Addr) bool {
 		return true
 	})
 	if alreadyTracked {
+		lanDeviceLimitCache.Lock()
+		lanDeviceLimitCache.expires = now.Add(lanDeviceLimitCacheTTL)
+		lanDeviceLimitCache.limit = limit
+		lanDeviceLimitCache.devices = deviceSet
+		lanDeviceLimitCache.Unlock()
 		return true
 	}
-	return len(deviceSet) < limit
+	allowed := len(deviceSet) < limit
+	if allowed {
+		deviceSet[sourceIP] = struct{}{}
+	}
+	lanDeviceLimitCache.Lock()
+	lanDeviceLimitCache.expires = now.Add(lanDeviceLimitCacheTTL)
+	lanDeviceLimitCache.limit = limit
+	lanDeviceLimitCache.devices = deviceSet
+	lanDeviceLimitCache.Unlock()
+	return allowed
 }
 
 func logLanDeviceOverLimit(metadata *C.Metadata) {

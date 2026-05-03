@@ -125,11 +125,11 @@ func (hc *HealthCheck) check() {
 		return
 	}
 
-	_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
+		_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
 		id := utils.NewUUIDV4().String()
 		log.Debugln("Start New Health Checking {%s}", id)
 		b := new(errgroup.Group)
-		b.SetLimit(30)
+		b.SetLimit(EffectiveHealthCheckWorkerLimit())
 
 		// execute default health check
 		option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
