@@ -119,12 +119,9 @@ func (s *Selector) NowIsManual() bool {
 	return s.manualSelected
 }
 
-// ClearManualSelection resets selection to the first proxy so no node is "manually selected".
+// ClearManualSelection clears manual flag without changing current selected node.
+// 这样测速流程不会把当前节点强制切到列表第一个（可能是超时节点）。
 func (s *Selector) ClearManualSelection() {
-	proxies := s.GetProxies(false)
-	if len(proxies) > 0 {
-		s.selected = proxies[0].Name()
-	}
 	s.manualSelected = false
 }
 
