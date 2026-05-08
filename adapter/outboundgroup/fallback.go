@@ -32,6 +32,7 @@ func (f *Fallback) Now() string {
 // DialContext implements C.ProxyAdapter
 func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
 	proxy := f.findAliveProxy(true)
+	f.onDialAttempt(proxy, f.testUrl, f.expectedStatus, f.healthCheck)
 	c, err := proxy.DialContext(ctx, metadata)
 	needHandshake := err == nil && N.NeedHandshake(c)
 	if err == nil {
@@ -59,6 +60,7 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 // ListenPacketContext implements C.ProxyAdapter
 func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
 	proxy := f.findAliveProxy(true)
+	f.onDialAttempt(proxy, f.testUrl, f.expectedStatus, f.healthCheck)
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(f)
@@ -207,6 +209,14 @@ func (f *Fallback) Proxies() []C.Proxy {
 }
 
 func NewFallback(option *GroupCommonOption, providers []P.ProxyProvider) *Fallback {
+	selectedTimeout := option.SelectedTimeout
+	if selectedTimeout <= 0 {
+		selectedTimeout = option.TestTimeout
+	}
+	if selectedTimeout <= 0 {
+		selectedTimeout = 5000
+	}
+
 	return &Fallback{
 		GroupBase: NewGroupBase(GroupBaseOption{
 			Name:                 option.Name,
@@ -217,12 +227,13 @@ func NewFallback(option *GroupCommonOption, providers []P.ProxyProvider) *Fallba
 			TestTimeout:          option.TestTimeout,
 			FailureResetInterval: option.FailureResetInterval,
 			MaxFailedTimes:       option.MaxFailedTimes,
+			MaxConnectTimes:      option.MaxConnectTimes,
 			Providers:            providers,
 		}),
 		disableUDP:      option.DisableUDP,
 		testUrl:         option.URL,
 		expectedStatus:  option.ExpectedStatus,
-		selectedTimeout: option.SelectedTimeout,
+		selectedTimeout: selectedTimeout,
 		Hidden:          option.Hidden,
 		Icon:            option.Icon,
 	}

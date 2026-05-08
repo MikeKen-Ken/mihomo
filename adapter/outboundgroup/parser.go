@@ -33,6 +33,7 @@ type GroupCommonOption struct {
 	SelectedTimeout      int      `group:"selected-timeout,omitempty"`
 	FailureResetInterval  int      `group:"failure-reset-interval,omitempty"`
 	MaxFailedTimes        int      `group:"max-failed-times,omitempty"`
+	MaxConnectTimes       int      `group:"max-connect-times,omitempty"`
 	Lazy                bool     `group:"lazy,omitempty"`
 	DisableUDP          bool     `group:"disable-udp,omitempty"`
 	Filter              string   `group:"filter,omitempty"`

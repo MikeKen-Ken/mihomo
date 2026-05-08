@@ -25,6 +25,8 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+const maxConnectTimesTestEventPrefix = "max-connect-times\t"
+
 type GroupBase struct {
 	*outbound.Base
 	filterRegs        []*regexp2.Regexp
@@ -35,9 +37,13 @@ type GroupBase struct {
 	failedTimes          int
 	failedTime           time.Time
 	failedTesting        atomic.Bool
+	connectTestMux       sync.Mutex
+	connectTimes         int
+	connectTesting       atomic.Bool
 	TestTimeout          int
 	failureResetInterval int
 	maxFailedTimes       int
+	maxConnectTimes      int
 
 	// for GetProxies
 	getProxiesMutex  sync.Mutex
@@ -54,6 +60,7 @@ type GroupBaseOption struct {
 	TestTimeout           int
 	FailureResetInterval  int
 	MaxFailedTimes        int
+	MaxConnectTimes       int
 	Providers             []P.ProxyProvider
 }
 
@@ -86,9 +93,11 @@ func NewGroupBase(opt GroupBaseOption) *GroupBase {
 		excludeTypeArray:  excludeTypeArray,
 		providers:         opt.Providers,
 		failedTesting:     atomic.NewBool(false),
+		connectTesting:    atomic.NewBool(false),
 		TestTimeout:          opt.TestTimeout,
 		failureResetInterval: opt.FailureResetInterval,
 		maxFailedTimes:        opt.MaxFailedTimes,
+		maxConnectTimes:       opt.MaxConnectTimes,
 	}
 
 	if gb.TestTimeout == 0 {
@@ -225,6 +234,55 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 	return proxies
 }
 
+func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus string, fn func()) {
+	if gb.maxConnectTimes <= 0 || proxy == nil || testURL == "" {
+		return
+	}
+
+	adapterType := proxy.Type()
+	if adapterType == C.Direct || adapterType == C.Compatible || adapterType == C.Reject || adapterType == C.Pass || adapterType == C.RejectDrop {
+		return
+	}
+
+	shouldTest := false
+	gb.connectTestMux.Lock()
+	gb.connectTimes++
+	if gb.connectTimes >= gb.maxConnectTimes {
+		gb.connectTimes = 0
+		shouldTest = true
+	}
+	gb.connectTestMux.Unlock()
+
+	if !shouldTest || !gb.connectTesting.CompareAndSwap(false, true) {
+		return
+	}
+
+	go func() {
+		defer gb.connectTesting.Store(false)
+
+		timeoutMs := gb.TestTimeout
+		if timeoutMs <= 0 {
+			timeoutMs = 5000
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
+		defer cancel()
+
+		status, err := utils.NewUnsignedRanges[uint16](expectedStatus)
+		if err != nil {
+			log.Debugln("ProxyGroup: %s max connect times test skipped: %v", gb.Name(), err)
+			return
+		}
+
+		log.Infoln("[APP] max-connect-times test triggered\t%s\t%s", gb.Name(), proxy.Name())
+		notifyMaxConnectTimesTestTriggered(gb.Name(), proxy.Name())
+
+		if _, err = proxy.URLTest(ctx, testURL, status); err != nil {
+			log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test: %v", gb.Name(), proxy.Name(), err)
+			fn()
+		}
+	}()
+}
+
 func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (map[string]uint16, error) {
 	var wg sync.WaitGroup
 	var lock sync.Mutex
@@ -325,6 +383,9 @@ func (gb *GroupBase) healthCheck() {
 
 	gb.failedTesting.Store(false)
 	gb.failedTimes = 0
+	gb.connectTestMux.Lock()
+	gb.connectTimes = 0
+	gb.connectTestMux.Unlock()
 }
 
 func (gb *GroupBase) onDialSuccess() {

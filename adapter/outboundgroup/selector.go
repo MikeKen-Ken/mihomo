@@ -150,6 +150,14 @@ func (s *Selector) Proxies() []C.Proxy {
 }
 
 func NewSelector(option *GroupCommonOption, providers []P.ProxyProvider) *Selector {
+	selectedTimeout := option.SelectedTimeout
+	if selectedTimeout <= 0 {
+		selectedTimeout = option.TestTimeout
+	}
+	if selectedTimeout <= 0 {
+		selectedTimeout = 5000
+	}
+
 	return &Selector{
 		GroupBase: NewGroupBase(GroupBaseOption{
 			Name:                 option.Name,
@@ -160,14 +168,15 @@ func NewSelector(option *GroupCommonOption, providers []P.ProxyProvider) *Select
 			TestTimeout:          option.TestTimeout,
 			FailureResetInterval: option.FailureResetInterval,
 			MaxFailedTimes:       option.MaxFailedTimes,
+			MaxConnectTimes:      option.MaxConnectTimes,
 			Providers:            providers,
 		}),
 		selected:        "COMPATIBLE",
 		disableUDP:      option.DisableUDP,
 		testUrl:         option.URL,
 		expectedStatus:  option.ExpectedStatus,
-		selectedTimeout: option.SelectedTimeout,
-		Hidden:         option.Hidden,
-		Icon:           option.Icon,
+		selectedTimeout: selectedTimeout,
+		Hidden:          option.Hidden,
+		Icon:            option.Icon,
 	}
 }

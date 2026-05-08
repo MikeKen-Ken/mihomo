@@ -997,7 +997,7 @@ func parseProxies(cfg *RawConfig) (proxies map[string]C.Proxy, providersMap map[
 
 	// Read config values from user's proxy group config for GLOBAL group
 	globalTimeout := 5000 // default timeout in ms
-	globalSelectedTimeout := 0
+	globalSelectedTimeout := 5000
 	globalURL := C.DefaultTestURL
 	globalExpectedStatus := ""
 	foundTimeout := false
