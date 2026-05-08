@@ -276,10 +276,14 @@ func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus
 		log.Infoln("[APP] max-connect-times test triggered\t%s\t%s", gb.Name(), proxy.Name())
 		notifyMaxConnectTimesTestTriggered(gb.Name(), proxy.Name())
 
-		if _, err = proxy.URLTest(ctx, testURL, status); err != nil {
-			log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test: %v", gb.Name(), proxy.Name(), err)
+		delay, testErr := proxy.URLTest(ctx, testURL, status)
+		if testErr != nil {
+			log.Infoln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxy.Name(), testErr)
+			log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test: %v", gb.Name(), proxy.Name(), testErr)
 			fn()
+			return
 		}
+		log.Infoln("[APP] max-connect-times test result\t%s\t%s\tsuccess\t%d", gb.Name(), proxy.Name(), delay)
 	}()
 }
 
