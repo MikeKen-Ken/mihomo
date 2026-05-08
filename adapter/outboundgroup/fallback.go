@@ -100,6 +100,8 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 		"selectedTimeout": f.selectedTimeout,
 		"hidden":          f.Hidden,
 		"icon":            f.Icon,
+		"connectTimes":    f.ConnectTimes(),
+		"maxConnectTimes": f.MaxConnectTimes(),
 	})
 }
 
@@ -170,6 +172,8 @@ func (f *Fallback) Set(name string) error {
 
 	// 异步健康检测：仅用于更新延迟显示，不根据结果修改 selected
 	go func() {
+		defer f.resetConnectTimes()
+
 		timeoutMs := f.selectedTimeout
 		if timeoutMs <= 0 {
 			timeoutMs = f.TestTimeout

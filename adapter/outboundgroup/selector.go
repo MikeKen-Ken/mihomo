@@ -75,6 +75,8 @@ func (s *Selector) MarshalJSON() ([]byte, error) {
 		"testUrl": url,
 		"hidden":  s.Hidden,
 		"icon":    s.Icon,
+		"connectTimes":    s.ConnectTimes(),
+		"maxConnectTimes": s.MaxConnectTimes(),
 	})
 }
 
@@ -99,6 +101,8 @@ func (s *Selector) Set(name string) error {
 	// 异步测速：手动选择的节点在后台测速，不阻塞返回（与安卓端体验对齐）
 	if s.selectedTimeout > 0 && s.testUrl != "" {
 		go func() {
+			defer s.resetConnectTimes()
+
 			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(s.selectedTimeout))
 			defer cancel()
 			expectedStatus, _ := utils.NewUnsignedRanges[uint16](s.expectedStatus)

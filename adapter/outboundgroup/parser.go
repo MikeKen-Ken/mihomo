@@ -186,14 +186,35 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide
 		group = NewFallback(groupOption, providers)
 	case "load-balance":
 		strategy := parseStrategy(config)
-		return NewLoadBalance(groupOption, providers, strategy)
+		group, err = NewLoadBalance(groupOption, providers, strategy)
+		if err != nil {
+			return nil, err
+		}
 	case "relay":
 		return nil, fmt.Errorf("%w: The group [%s] with relay type was removed, please using dialer-proxy instead", errType, groupName)
 	default:
 		return nil, fmt.Errorf("%w: %s", errType, groupOption.Type)
 	}
 
+	registerConnectTimesResetToProviders(group)
+
 	return group, nil
+}
+
+func registerConnectTimesResetToProviders(group C.ProxyAdapter) {
+	proxyGroup, ok := group.(ProxyGroup)
+	if !ok {
+		return
+	}
+
+	resetable, ok := group.(interface{ resetConnectTimes() })
+	if !ok {
+		return
+	}
+
+	for _, pd := range proxyGroup.Providers() {
+		pd.RegisterHealthCheckCallback(resetable.resetConnectTimes)
+	}
 }
 
 func getProxies(mapping map[string]C.Proxy, list []string) ([]C.Proxy, error) {

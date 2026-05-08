@@ -32,6 +32,7 @@ type HealthCheck struct {
 	url            string
 	extra          map[string]*extraOption
 	mu             sync.Mutex
+	callbacks      []func()
 	proxies        []C.Proxy
 	interval       time.Duration
 	lazy           bool
@@ -100,6 +101,26 @@ func (hc *HealthCheck) registerHealthCheckTask(url string, expectedStatus utils.
 	hc.extra[url] = option
 }
 
+func (hc *HealthCheck) registerHealthCheckCallback(callback func()) {
+	if callback == nil {
+		return
+	}
+
+	hc.mu.Lock()
+	hc.callbacks = append(hc.callbacks, callback)
+	hc.mu.Unlock()
+}
+
+func (hc *HealthCheck) notifyHealthCheckCallbacks() {
+	hc.mu.Lock()
+	callbacks := append([]func(){}, hc.callbacks...)
+	hc.mu.Unlock()
+
+	for _, callback := range callbacks {
+		callback()
+	}
+}
+
 func splitAndAddFiltersToExtra(filter string, option *extraOption) {
 	filter = strings.TrimSpace(filter)
 	if len(filter) != 0 {
@@ -124,8 +145,9 @@ func (hc *HealthCheck) check() {
 	if len(hc.proxies) == 0 {
 		return
 	}
+	defer hc.notifyHealthCheckCallbacks()
 
-		_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
+	_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
 		id := utils.NewUUIDV4().String()
 		log.Debugln("Start New Health Checking {%s}", id)
 		b := new(errgroup.Group)

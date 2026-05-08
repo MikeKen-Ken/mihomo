@@ -242,6 +242,8 @@ func (lb *LoadBalance) MarshalJSON() ([]byte, error) {
 		"expectedStatus": lb.expectedStatus,
 		"hidden":         lb.Hidden,
 		"icon":           lb.Icon,
+		"connectTimes":   lb.ConnectTimes(),
+		"maxConnectTimes": lb.MaxConnectTimes(),
 	})
 }
 

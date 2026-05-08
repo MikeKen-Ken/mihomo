@@ -188,6 +188,8 @@ func (u *URLTest) MarshalJSON() ([]byte, error) {
 		"fixed":          u.selected,
 		"hidden":         u.Hidden,
 		"icon":           u.Icon,
+		"connectTimes":   u.ConnectTimes(),
+		"maxConnectTimes": u.MaxConnectTimes(),
 	})
 }
 

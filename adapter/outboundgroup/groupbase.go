@@ -283,7 +283,29 @@ func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus
 	}()
 }
 
+func (gb *GroupBase) resetConnectTimes() {
+	gb.connectTestMux.Lock()
+	gb.connectTimes = 0
+	gb.connectTestMux.Unlock()
+}
+
+func (gb *GroupBase) ResetConnectTimes() {
+	gb.resetConnectTimes()
+}
+
+func (gb *GroupBase) ConnectTimes() int {
+	gb.connectTestMux.Lock()
+	defer gb.connectTestMux.Unlock()
+	return gb.connectTimes
+}
+
+func (gb *GroupBase) MaxConnectTimes() int {
+	return gb.maxConnectTimes
+}
+
 func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (map[string]uint16, error) {
+	defer gb.resetConnectTimes()
+
 	var wg sync.WaitGroup
 	var lock sync.Mutex
 	mp := map[string]uint16{}
@@ -383,9 +405,7 @@ func (gb *GroupBase) healthCheck() {
 
 	gb.failedTesting.Store(false)
 	gb.failedTimes = 0
-	gb.connectTestMux.Lock()
-	gb.connectTimes = 0
-	gb.connectTestMux.Unlock()
+	gb.resetConnectTimes()
 }
 
 func (gb *GroupBase) onDialSuccess() {

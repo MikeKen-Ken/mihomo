@@ -41,6 +41,12 @@ type NowIsManualAble interface {
 	NowIsManual() bool
 }
 
+type ConnectTimesAble interface {
+	ConnectTimes() int
+	MaxConnectTimes() int
+	ResetConnectTimes()
+}
+
 var _ SelectAble = (*Fallback)(nil)
 var _ SelectAble = (*URLTest)(nil)
 var _ SelectAble = (*Selector)(nil)
@@ -48,3 +54,4 @@ var _ ClearManualSelectionAble = (*Selector)(nil)
 var _ ClearManualSelectionAble = (*Fallback)(nil)
 var _ NowIsManualAble = (*Selector)(nil)
 var _ NowIsManualAble = (*Fallback)(nil)
+var _ ConnectTimesAble = (*GroupBase)(nil)
