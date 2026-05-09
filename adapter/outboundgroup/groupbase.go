@@ -19,7 +19,6 @@ import (
 	P "github.com/metacubex/mihomo/constant/provider"
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/tunnel"
-	"github.com/metacubex/mihomo/tunnel/statistic"
 
 	"github.com/dlclark/regexp2"
 	"golang.org/x/exp/slices"
@@ -448,11 +447,6 @@ func (gb *GroupBase) healthCheck() {
 	}
 
 	wg.Wait()
-
-	// After fallback health check, close all non-direct connections so traffic uses the new node
-	if gb.Type() == C.Fallback {
-		statistic.DefaultManager.CloseConnectionsExcludingDirect()
-	}
 
 	gb.failedTesting.Store(false)
 	gb.failedTimes = 0

@@ -113,6 +113,52 @@ func (m *Manager) CloseConnectionsUsingProxyGroup(group string) {
 	}
 }
 
+// CloseConnectionsUsingProxyGroupsAndProxy 只关闭链路中同时包含指定代理组和节点的连接，
+// 避免某个 fallback 组健康检测时误伤其它未使用该节点的连接。
+func (m *Manager) CloseConnectionsUsingProxyGroupsAndProxy(groups []string, proxy string) {
+	if len(groups) == 0 || proxy == "" {
+		return
+	}
+
+	groupSet := map[string]struct{}{}
+	for _, group := range groups {
+		if group != "" {
+			groupSet[group] = struct{}{}
+		}
+	}
+	if len(groupSet) == 0 {
+		return
+	}
+
+	var toClose []string
+	m.Range(func(c Tracker) bool {
+		info := c.Info()
+		if info == nil {
+			return true
+		}
+		hasProxy := false
+		hasGroup := false
+		for _, name := range info.Chain {
+			if name == proxy {
+				hasProxy = true
+			}
+			if _, ok := groupSet[name]; ok {
+				hasGroup = true
+			}
+			if hasProxy && hasGroup {
+				toClose = append(toClose, c.ID())
+				break
+			}
+		}
+		return true
+	})
+	for _, id := range toClose {
+		if c := m.Get(id); c != nil {
+			_ = c.Close()
+		}
+	}
+}
+
 func (m *Manager) PushUploaded(size int64) {
 	m.uploadTemp.Add(size)
 	m.uploadTotal.Add(size)

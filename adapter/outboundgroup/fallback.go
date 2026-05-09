@@ -11,6 +11,8 @@ import (
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
+	"github.com/metacubex/mihomo/tunnel"
+	"github.com/metacubex/mihomo/tunnel/statistic"
 )
 
 type Fallback struct {
@@ -30,13 +32,16 @@ func (f *Fallback) Now() string {
 // DialContext implements C.ProxyAdapter
 func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
 	proxy := f.findAliveProxy(true)
-	f.onDialAttempt(proxy, f.testUrl, f.expectedStatus, f.healthCheck)
+	healthCheck := func() {
+		f.healthCheckForProxy(proxy)
+	}
+	f.onDialAttempt(proxy, f.testUrl, f.expectedStatus, healthCheck)
 	c, err := proxy.DialContext(ctx, metadata)
 	needHandshake := err == nil && N.NeedHandshake(c)
 	if err == nil {
 		c.AppendToChains(f)
 	} else {
-		f.onDialFailed(proxy.Type(), err, f.healthCheck)
+		f.onDialFailed(proxy.Type(), err, healthCheck)
 	}
 
 	if needHandshake {
@@ -44,12 +49,12 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 			if err == nil {
 				f.onDialSuccess()
 			} else {
-				f.onDialFailed(proxy.Type(), err, f.healthCheck)
+				f.onDialFailed(proxy.Type(), err, healthCheck)
 			}
 		})
 	}
 	if err == nil {
-		c = f.observePostConnectFailure(c, proxy.Type(), needHandshake, f.healthCheck)
+		c = f.observePostConnectFailure(c, proxy.Type(), needHandshake, healthCheck)
 	}
 
 	return c, err
@@ -58,13 +63,57 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 // ListenPacketContext implements C.ProxyAdapter
 func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
 	proxy := f.findAliveProxy(true)
-	f.onDialAttempt(proxy, f.testUrl, f.expectedStatus, f.healthCheck)
+	f.onDialAttempt(proxy, f.testUrl, f.expectedStatus, func() {
+		f.healthCheckForProxy(proxy)
+	})
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(f)
 	}
 
 	return pc, err
+}
+
+func (f *Fallback) healthCheck() {
+	f.healthCheckForProxy(f.findAliveProxy(false))
+}
+
+func (f *Fallback) healthCheckForProxy(proxy C.Proxy) {
+	if proxy == nil {
+		f.GroupBase.healthCheck()
+		statistic.DefaultManager.CloseConnectionsUsingProxyGroup(f.Name())
+		return
+	}
+
+	proxyName := proxy.Name()
+	groups := f.fallbackGroupsUsingProxy(proxyName)
+	groupNames := make([]string, 0, len(groups))
+	for _, group := range groups {
+		group.GroupBase.healthCheck()
+		groupNames = append(groupNames, group.Name())
+	}
+	statistic.DefaultManager.CloseConnectionsUsingProxyGroupsAndProxy(groupNames, proxyName)
+}
+
+func (f *Fallback) fallbackGroupsUsingProxy(proxyName string) []*Fallback {
+	groups := []*Fallback{f}
+	seen := map[*Fallback]struct{}{f: {}}
+	for _, proxy := range tunnel.Proxies() {
+		group, ok := proxy.Adapter().(*Fallback)
+		if !ok {
+			continue
+		}
+		if _, ok := seen[group]; ok {
+			continue
+		}
+		current := group.findAliveProxy(false)
+		if current == nil || current.Name() != proxyName {
+			continue
+		}
+		seen[group] = struct{}{}
+		groups = append(groups, group)
+	}
+	return groups
 }
 
 // SupportUDP implements C.ProxyAdapter
