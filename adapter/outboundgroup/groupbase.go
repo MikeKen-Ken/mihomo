@@ -31,8 +31,7 @@ const (
 )
 
 const (
-	maxConnectTimesConsecutiveFailThreshold = 2
-	maxConnectTimesTestCooldown             = 30 * time.Second
+	maxConnectTimesTestCooldown = 30 * time.Second
 )
 
 type GroupBase struct {
@@ -49,8 +48,6 @@ type GroupBase struct {
 	failedTesting        atomic.Bool
 	connectTestMux       sync.Mutex
 	connectTimes         int
-	connectFailedTimes   int
-	connectFailedProxy   string
 	lastConnectTestAt    time.Time
 	connectTesting       atomic.Bool
 	TestTimeout          int
@@ -295,8 +292,6 @@ func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus
 		if timeoutMs <= 0 {
 			timeoutMs = 5000
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
-		defer cancel()
 
 		status, err := utils.NewUnsignedRanges[uint16](expectedStatus)
 		if err != nil {
@@ -304,51 +299,42 @@ func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus
 			return
 		}
 
+		runURLTest := func() (uint16, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
+			defer cancel()
+
+			return proxy.URLTest(ctx, testURL, status)
+		}
+
 		log.Infoln("[APP] max-connect-times test triggered\t%s\t%s", gb.Name(), proxy.Name())
 		notifyMaxConnectTimesTestTriggered(gb.Name(), proxy.Name())
 
-		delay, testErr := proxy.URLTest(ctx, testURL, status)
-		if testErr != nil {
-			proxyName := proxy.Name()
-			shouldTriggerHealthCheck := false
-			failTimes := 0
-			gb.connectTestMux.Lock()
-			if gb.connectFailedProxy != proxyName {
-				gb.connectFailedProxy = proxyName
-				gb.connectFailedTimes = 0
-			}
-			gb.connectFailedTimes++
-			failTimes = gb.connectFailedTimes
-			if gb.connectFailedTimes >= maxConnectTimesConsecutiveFailThreshold {
-				gb.connectFailedTimes = 0
-				gb.connectFailedProxy = ""
-				shouldTriggerHealthCheck = true
-			}
-			gb.connectTestMux.Unlock()
-
-			log.Infoln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxyName, testErr)
-			log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test: %v", gb.Name(), proxyName, testErr)
-			if shouldTriggerHealthCheck {
-				log.Infoln("[APP] max-connect-times health-check triggered\t%s\t%s\tfail-times=%d", gb.Name(), proxyName, maxConnectTimesConsecutiveFailThreshold)
-				fn()
-			} else {
-				log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test, waiting next consecutive failure (%d/%d)", gb.Name(), proxyName, failTimes, maxConnectTimesConsecutiveFailThreshold)
-			}
+		delay, testErr := runURLTest()
+		if testErr == nil {
+			log.Infoln("[APP] max-connect-times test result\t%s\t%s\tsuccess\t%d", gb.Name(), proxy.Name(), delay)
 			return
 		}
-		gb.connectTestMux.Lock()
-		gb.connectFailedTimes = 0
-		gb.connectFailedProxy = ""
-		gb.connectTestMux.Unlock()
-		log.Infoln("[APP] max-connect-times test result\t%s\t%s\tsuccess\t%d", gb.Name(), proxy.Name(), delay)
+
+		log.Infoln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxy.Name(), testErr)
+		log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test: %v", gb.Name(), proxy.Name(), testErr)
+		log.Infoln("[APP] max-connect-times test retry\t%s\t%s", gb.Name(), proxy.Name())
+
+		retryDelay, retryErr := runURLTest()
+		if retryErr == nil {
+			log.Infoln("[APP] max-connect-times test result\t%s\t%s\tsuccess\t%d", gb.Name(), proxy.Name(), retryDelay)
+			return
+		}
+
+		log.Infoln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxy.Name(), retryErr)
+		log.Infoln("[APP] max-connect-times health-check triggered\t%s\t%s\tretry-fail", gb.Name(), proxy.Name())
+		log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test twice, trigger health check", gb.Name(), proxy.Name())
+		fn()
 	}()
 }
 
 func (gb *GroupBase) resetConnectTimes() {
 	gb.connectTestMux.Lock()
 	gb.connectTimes = 0
-	gb.connectFailedTimes = 0
-	gb.connectFailedProxy = ""
 	gb.lastConnectTestAt = time.Time{}
 	gb.connectTestMux.Unlock()
 	notifyProxyGroupRefresh(gb.Name())
