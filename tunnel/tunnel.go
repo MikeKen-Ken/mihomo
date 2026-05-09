@@ -528,12 +528,24 @@ func processUDP(queue chan C.PacketAdapter) {
 }
 
 func countProxyRequest(proxy C.Proxy, metadata *C.Metadata) {
+	countProxyRequestRecursive(proxy, metadata, map[string]struct{}{})
+}
+
+func countProxyRequestRecursive(proxy C.Proxy, metadata *C.Metadata, seen map[string]struct{}) {
 	if proxy == nil {
 		return
 	}
-	if counter, ok := proxy.Adapter().(C.RequestCounter); ok {
+	name := proxy.Name()
+	if _, ok := seen[name]; ok {
+		return
+	}
+	seen[name] = struct{}{}
+
+	adapter := proxy.Adapter()
+	if counter, ok := adapter.(C.RequestCounter); ok {
 		counter.CountRequest(metadata)
 	}
+	countProxyRequestRecursive(adapter.Unwrap(metadata, false), metadata, seen)
 }
 
 func handleUDPConn(packet C.PacketAdapter) {

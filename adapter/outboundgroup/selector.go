@@ -39,6 +39,10 @@ func (s *Selector) ListenPacketContext(ctx context.Context, metadata *C.Metadata
 	return pc, err
 }
 
+func (s *Selector) CountRequest(metadata *C.Metadata) {
+	s.onRequestAttempt(s.selectedProxy(false), s.testUrl, s.expectedStatus, func() {})
+}
+
 // SupportUDP implements C.ProxyAdapter
 func (s *Selector) SupportUDP() bool {
 	if s.disableUDP {
