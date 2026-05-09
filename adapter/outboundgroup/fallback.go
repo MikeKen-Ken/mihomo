@@ -37,7 +37,6 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 	healthCheck := func() {
 		f.healthCheckForProxy(proxy)
 	}
-	f.onDialAttempt(proxy, f.testUrl, f.expectedStatus, healthCheck)
 	c, err := proxy.DialContext(ctx, metadata)
 	needHandshake := err == nil && N.NeedHandshake(c)
 	if err == nil {
@@ -65,9 +64,6 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 // ListenPacketContext implements C.ProxyAdapter
 func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
 	proxy := f.findAliveProxy(true)
-	f.onDialAttempt(proxy, f.testUrl, f.expectedStatus, func() {
-		f.healthCheckForProxy(proxy)
-	})
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(f)
@@ -76,16 +72,23 @@ func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata
 	return pc, err
 }
 
+func (f *Fallback) CountRequest(metadata *C.Metadata) {
+	proxy := f.findAliveProxy(true)
+	f.onRequestAttempt(proxy, f.testUrl, f.expectedStatus, func() {
+		f.healthCheckForProxy(proxy)
+	})
+}
+
 func (f *Fallback) healthCheck() {
 	f.healthCheckForProxy(f.findAliveProxy(false))
 }
 
 func (f *Fallback) healthCheckForProxy(proxy C.Proxy) {
 	if proxy == nil {
-		log.Infoln("[APP] fallback scoped-health-check\tgroup=%s\tproxy=<nil>\tscope=self-only", f.Name())
+		log.Warnln("[APP] fallback scoped-health-check\tgroup=%s\tproxy=<nil>\tscope=self-only", f.Name())
 		f.GroupBase.healthCheck()
 		closed := statistic.DefaultManager.CloseConnectionsUsingProxyGroup(f.Name())
-		log.Infoln("[APP] fallback scoped-close\tgroup=%s\tproxy=<nil>\tclosed=%d", f.Name(), closed)
+		log.Warnln("[APP] fallback scoped-close\tgroup=%s\tproxy=<nil>\tclosed=%d", f.Name(), closed)
 		return
 	}
 
@@ -98,9 +101,9 @@ func (f *Fallback) healthCheckForProxy(proxy C.Proxy) {
 		groupNames = append(groupNames, group.Name())
 		groupNamesLog = append(groupNamesLog, group.Name())
 	}
-	log.Infoln("[APP] fallback scoped-health-check\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s", f.Name(), proxyName, strings.Join(groupNamesLog, ","))
+	log.Warnln("[APP] fallback scoped-health-check\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s", f.Name(), proxyName, strings.Join(groupNamesLog, ","))
 	closed := statistic.DefaultManager.CloseConnectionsUsingProxyGroupsAndProxy(groupNames, proxyName)
-	log.Infoln("[APP] fallback scoped-close\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s\tclosed=%d", f.Name(), proxyName, strings.Join(groupNamesLog, ","), closed)
+	log.Warnln("[APP] fallback scoped-close\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s\tclosed=%d", f.Name(), proxyName, strings.Join(groupNamesLog, ","), closed)
 }
 
 func (f *Fallback) fallbackGroupsUsingProxy(proxyName string) []*Fallback {

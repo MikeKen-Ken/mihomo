@@ -255,7 +255,7 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 	return proxies
 }
 
-func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus string, fn func()) {
+func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedStatus string, fn func()) {
 	if gb.maxConnectTimes <= 0 || proxy == nil || testURL == "" {
 		return
 	}
@@ -280,7 +280,7 @@ func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus
 	notifyProxyGroupRefresh(gb.Name())
 
 	if !shouldTest {
-		log.Debugln("ProxyGroup: %s max-connect-times not reached cooldown, count=%d/%d", gb.Name(), currentConnectTimes, gb.maxConnectTimes)
+		log.Debugln("ProxyGroup: %s max-connect-times request count not reached cooldown, count=%d/%d", gb.Name(), currentConnectTimes, gb.maxConnectTimes)
 		return
 	}
 	if !gb.connectTesting.CompareAndSwap(false, true) {
@@ -311,27 +311,27 @@ func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus
 			return proxy.URLTest(ctx, testURL, status)
 		}
 
-		log.Infoln("[APP] max-connect-times test triggered\tgroup=%s\tproxy=%s\tthreshold=%d\ttimeoutMs=%d", gb.Name(), proxy.Name(), gb.maxConnectTimes, timeoutMs)
+		log.Warnln("[APP] max-connect-times test triggered\tgroup=%s\tproxy=%s\tthreshold=%d\ttimeoutMs=%d", gb.Name(), proxy.Name(), gb.maxConnectTimes, timeoutMs)
 		notifyMaxConnectTimesTestTriggered(gb.Name(), proxy.Name())
 
 		delay, testErr := runURLTest()
 		if testErr == nil {
-			log.Infoln("[APP] max-connect-times test result\t%s\t%s\tsuccess\t%d", gb.Name(), proxy.Name(), delay)
+			log.Warnln("[APP] max-connect-times test result\t%s\t%s\tsuccess\t%d", gb.Name(), proxy.Name(), delay)
 			return
 		}
 
-		log.Infoln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxy.Name(), testErr)
+		log.Warnln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxy.Name(), testErr)
 		log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test: %v", gb.Name(), proxy.Name(), testErr)
-		log.Infoln("[APP] max-connect-times test retry\tgroup=%s\tproxy=%s\treason=first-test-failed", gb.Name(), proxy.Name())
+		log.Warnln("[APP] max-connect-times test retry\tgroup=%s\tproxy=%s\treason=first-test-failed", gb.Name(), proxy.Name())
 
 		retryDelay, retryErr := runURLTest()
 		if retryErr == nil {
-			log.Infoln("[APP] max-connect-times test result\t%s\t%s\tsuccess\t%d", gb.Name(), proxy.Name(), retryDelay)
+			log.Warnln("[APP] max-connect-times test result\t%s\t%s\tsuccess\t%d", gb.Name(), proxy.Name(), retryDelay)
 			return
 		}
 
-		log.Infoln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxy.Name(), retryErr)
-		log.Infoln("[APP] max-connect-times health-check triggered\tgroup=%s\tproxy=%s\treason=retry-fail", gb.Name(), proxy.Name())
+		log.Warnln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxy.Name(), retryErr)
+		log.Warnln("[APP] max-connect-times health-check triggered\tgroup=%s\tproxy=%s\treason=retry-fail", gb.Name(), proxy.Name())
 		log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test twice, trigger health check", gb.Name(), proxy.Name())
 		fn()
 	}()
@@ -400,7 +400,7 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 
 	go func() {
 		if strings.Contains(err.Error(), "connection refused") {
-			log.Infoln("[APP] max-failed-times health-check triggered\tgroup=%s\treason=connection-refused", gb.Name())
+			log.Warnln("[APP] max-failed-times health-check triggered\tgroup=%s\treason=connection-refused", gb.Name())
 			fn()
 			return
 		}
@@ -412,24 +412,24 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 		if gb.failedTimes == 1 {
 			log.Debugln("ProxyGroup: %s first failed", gb.Name())
 			gb.failedTime = time.Now()
-			log.Infoln("[APP] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
+			log.Warnln("[APP] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
 			if gb.failedTimes >= gb.maxFailedTimes {
 				log.Warnln("because %s failed multiple times, active health check", gb.Name())
-				log.Infoln("[APP] max-failed-times health-check triggered\tgroup=%s\tcount=%d\tthreshold=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes)
+				log.Warnln("[APP] max-failed-times health-check triggered\tgroup=%s\tcount=%d\tthreshold=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes)
 				fn()
 			}
 		} else {
 			if time.Since(gb.failedTime) > time.Duration(gb.failureResetInterval)*time.Millisecond {
-				log.Infoln("[APP] max-failed-times reset\tgroup=%s\treason=window-expired\tcount=%d", gb.Name(), gb.failedTimes)
+				log.Warnln("[APP] max-failed-times reset\tgroup=%s\treason=window-expired\tcount=%d", gb.Name(), gb.failedTimes)
 				gb.failedTimes = 0
 				return
 			}
 
 			log.Debugln("ProxyGroup: %s failed count: %d", gb.Name(), gb.failedTimes)
-			log.Infoln("[APP] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
+			log.Warnln("[APP] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
 			if gb.failedTimes >= gb.maxFailedTimes {
 				log.Warnln("because %s failed multiple times, activate health check", gb.Name())
-				log.Infoln("[APP] max-failed-times health-check triggered\tgroup=%s\tcount=%d\tthreshold=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes)
+				log.Warnln("[APP] max-failed-times health-check triggered\tgroup=%s\tcount=%d\tthreshold=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes)
 				fn()
 			}
 		}

@@ -86,7 +86,6 @@ func jumpHash(key uint64, buckets int32) int32 {
 // DialContext implements C.ProxyAdapter
 func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := lb.Unwrap(metadata, true)
-	lb.onDialAttempt(proxy, lb.testUrl, lb.expectedStatus, lb.healthCheck)
 	c, err = proxy.DialContext(ctx, metadata)
 	needHandshake := err == nil && N.NeedHandshake(c)
 
@@ -121,8 +120,11 @@ func (lb *LoadBalance) ListenPacketContext(ctx context.Context, metadata *C.Meta
 	}()
 
 	proxy := lb.Unwrap(metadata, true)
-	lb.onDialAttempt(proxy, lb.testUrl, lb.expectedStatus, lb.healthCheck)
 	return proxy.ListenPacketContext(ctx, metadata)
+}
+
+func (lb *LoadBalance) CountRequest(metadata *C.Metadata) {
+	lb.onRequestAttempt(lb.Unwrap(metadata, false), lb.testUrl, lb.expectedStatus, lb.healthCheck)
 }
 
 // SupportUDP implements C.ProxyAdapter

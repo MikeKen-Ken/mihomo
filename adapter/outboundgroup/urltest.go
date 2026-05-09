@@ -60,7 +60,6 @@ func (u *URLTest) ForceSet(name string) {
 // DialContext implements C.ProxyAdapter
 func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := u.fast(true)
-	u.onDialAttempt(proxy, u.testUrl, u.expectedStatus, u.healthCheck)
 	c, err = proxy.DialContext(ctx, metadata)
 	needHandshake := err == nil && N.NeedHandshake(c)
 	if err == nil {
@@ -88,7 +87,6 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 // ListenPacketContext implements C.ProxyAdapter
 func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
 	proxy := u.fast(true)
-	u.onDialAttempt(proxy, u.testUrl, u.expectedStatus, u.healthCheck)
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(u)
@@ -97,6 +95,10 @@ func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
 	}
 
 	return pc, err
+}
+
+func (u *URLTest) CountRequest(metadata *C.Metadata) {
+	u.onRequestAttempt(u.fast(true), u.testUrl, u.expectedStatus, u.healthCheck)
 }
 
 // Unwrap implements C.ProxyAdapter

@@ -143,6 +143,10 @@ type ProxyAdapter interface {
 	Close() error
 }
 
+type RequestCounter interface {
+	CountRequest(metadata *Metadata)
+}
+
 type DelayHistory struct {
 	Time  time.Time `json:"time"`
 	Delay uint16    `json:"delay"`

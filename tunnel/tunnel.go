@@ -527,6 +527,15 @@ func processUDP(queue chan C.PacketAdapter) {
 	}
 }
 
+func countProxyRequest(proxy C.Proxy, metadata *C.Metadata) {
+	if proxy == nil {
+		return
+	}
+	if counter, ok := proxy.Adapter().(C.RequestCounter); ok {
+		counter.CountRequest(metadata)
+	}
+}
+
 func handleUDPConn(packet C.PacketAdapter) {
 	if !isHandle(packet.Metadata().Type) {
 		packet.Drop()
@@ -580,6 +589,7 @@ func handleUDPConn(packet C.PacketAdapter) {
 				log.Warnln("[UDP] Parse metadata failed: %s", err.Error())
 				return nil, nil, err
 			}
+			countProxyRequest(proxy, metadata)
 
 			dialMetadata := metadata.Pure()
 			ctx, cancel := context.WithTimeout(context.Background(), C.DefaultUDPTimeout)
@@ -678,6 +688,7 @@ func handleTCPConn(connCtx C.ConnContext) {
 		log.Warnln("[Metadata] parse failed: %s", err.Error())
 		return
 	}
+	countProxyRequest(proxy, metadata)
 
 	dialMetadata := metadata
 	if len(metadata.Host) > 0 {
