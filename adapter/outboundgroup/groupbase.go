@@ -25,7 +25,15 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-const maxConnectTimesTestEventPrefix = "max-connect-times\t"
+const (
+	maxConnectTimesTestEventPrefix = "max-connect-times\t"
+	proxyGroupRefreshEventPrefix   = "proxy-group-refresh\t"
+)
+
+const (
+	maxConnectTimesConsecutiveFailThreshold = 2
+	maxConnectTimesTestCooldown             = 30 * time.Second
+)
 
 type GroupBase struct {
 	*outbound.Base
@@ -41,6 +49,9 @@ type GroupBase struct {
 	failedTesting        atomic.Bool
 	connectTestMux       sync.Mutex
 	connectTimes         int
+	connectFailedTimes   int
+	connectFailedProxy   string
+	lastConnectTestAt    time.Time
 	connectTesting       atomic.Bool
 	TestTimeout          int
 	failureResetInterval int
@@ -263,13 +274,19 @@ func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus
 	gb.connectTimes++
 	if gb.connectTimes >= gb.maxConnectTimes {
 		gb.connectTimes = 0
-		shouldTest = true
+		if gb.lastConnectTestAt.IsZero() || time.Since(gb.lastConnectTestAt) >= maxConnectTimesTestCooldown {
+			shouldTest = true
+		}
 	}
 	gb.connectTestMux.Unlock()
+	notifyProxyGroupRefresh(gb.Name())
 
 	if !shouldTest || !gb.connectTesting.CompareAndSwap(false, true) {
 		return
 	}
+	gb.connectTestMux.Lock()
+	gb.lastConnectTestAt = time.Now()
+	gb.connectTestMux.Unlock()
 
 	go func() {
 		defer gb.connectTesting.Store(false)
@@ -292,11 +309,37 @@ func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus
 
 		delay, testErr := proxy.URLTest(ctx, testURL, status)
 		if testErr != nil {
-			log.Infoln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxy.Name(), testErr)
-			log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test: %v", gb.Name(), proxy.Name(), testErr)
-			fn()
+			proxyName := proxy.Name()
+			shouldTriggerHealthCheck := false
+			failTimes := 0
+			gb.connectTestMux.Lock()
+			if gb.connectFailedProxy != proxyName {
+				gb.connectFailedProxy = proxyName
+				gb.connectFailedTimes = 0
+			}
+			gb.connectFailedTimes++
+			failTimes = gb.connectFailedTimes
+			if gb.connectFailedTimes >= maxConnectTimesConsecutiveFailThreshold {
+				gb.connectFailedTimes = 0
+				gb.connectFailedProxy = ""
+				shouldTriggerHealthCheck = true
+			}
+			gb.connectTestMux.Unlock()
+
+			log.Infoln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxyName, testErr)
+			log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test: %v", gb.Name(), proxyName, testErr)
+			if shouldTriggerHealthCheck {
+				log.Infoln("[APP] max-connect-times health-check triggered\t%s\t%s\tfail-times=%d", gb.Name(), proxyName, maxConnectTimesConsecutiveFailThreshold)
+				fn()
+			} else {
+				log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test, waiting next consecutive failure (%d/%d)", gb.Name(), proxyName, failTimes, maxConnectTimesConsecutiveFailThreshold)
+			}
 			return
 		}
+		gb.connectTestMux.Lock()
+		gb.connectFailedTimes = 0
+		gb.connectFailedProxy = ""
+		gb.connectTestMux.Unlock()
 		log.Infoln("[APP] max-connect-times test result\t%s\t%s\tsuccess\t%d", gb.Name(), proxy.Name(), delay)
 	}()
 }
@@ -304,7 +347,11 @@ func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus
 func (gb *GroupBase) resetConnectTimes() {
 	gb.connectTestMux.Lock()
 	gb.connectTimes = 0
+	gb.connectFailedTimes = 0
+	gb.connectFailedProxy = ""
+	gb.lastConnectTestAt = time.Time{}
 	gb.connectTestMux.Unlock()
+	notifyProxyGroupRefresh(gb.Name())
 }
 
 func (gb *GroupBase) ResetConnectTimes() {
