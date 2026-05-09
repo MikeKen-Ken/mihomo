@@ -88,9 +88,9 @@ func (m *Manager) CloseConnectionsExcludingDirect() {
 
 // CloseConnectionsUsingProxyGroup 关闭链路中包含指定代理组名称的连接，
 // 便于手动 PatchSelector 后流量尽快走新选中的节点。
-func (m *Manager) CloseConnectionsUsingProxyGroup(group string) {
+func (m *Manager) CloseConnectionsUsingProxyGroup(group string) int {
 	if group == "" {
-		return
+		return 0
 	}
 	var toClose []string
 	m.Range(func(c Tracker) bool {
@@ -111,13 +111,14 @@ func (m *Manager) CloseConnectionsUsingProxyGroup(group string) {
 			_ = c.Close()
 		}
 	}
+	return len(toClose)
 }
 
 // CloseConnectionsUsingProxyGroupsAndProxy 只关闭链路中同时包含指定代理组和节点的连接，
 // 避免某个 fallback 组健康检测时误伤其它未使用该节点的连接。
-func (m *Manager) CloseConnectionsUsingProxyGroupsAndProxy(groups []string, proxy string) {
+func (m *Manager) CloseConnectionsUsingProxyGroupsAndProxy(groups []string, proxy string) int {
 	if len(groups) == 0 || proxy == "" {
-		return
+		return 0
 	}
 
 	groupSet := map[string]struct{}{}
@@ -127,7 +128,7 @@ func (m *Manager) CloseConnectionsUsingProxyGroupsAndProxy(groups []string, prox
 		}
 	}
 	if len(groupSet) == 0 {
-		return
+		return 0
 	}
 
 	var toClose []string
@@ -157,6 +158,7 @@ func (m *Manager) CloseConnectionsUsingProxyGroupsAndProxy(groups []string, prox
 			_ = c.Close()
 		}
 	}
+	return len(toClose)
 }
 
 func (m *Manager) PushUploaded(size int64) {

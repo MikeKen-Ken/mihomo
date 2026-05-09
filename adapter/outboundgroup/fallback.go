@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -11,6 +12,7 @@ import (
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
+	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/tunnel"
 	"github.com/metacubex/mihomo/tunnel/statistic"
 )
@@ -80,19 +82,25 @@ func (f *Fallback) healthCheck() {
 
 func (f *Fallback) healthCheckForProxy(proxy C.Proxy) {
 	if proxy == nil {
+		log.Infoln("[APP] fallback scoped-health-check\tgroup=%s\tproxy=<nil>\tscope=self-only", f.Name())
 		f.GroupBase.healthCheck()
-		statistic.DefaultManager.CloseConnectionsUsingProxyGroup(f.Name())
+		closed := statistic.DefaultManager.CloseConnectionsUsingProxyGroup(f.Name())
+		log.Infoln("[APP] fallback scoped-close\tgroup=%s\tproxy=<nil>\tclosed=%d", f.Name(), closed)
 		return
 	}
 
 	proxyName := proxy.Name()
 	groups := f.fallbackGroupsUsingProxy(proxyName)
 	groupNames := make([]string, 0, len(groups))
+	groupNamesLog := make([]string, 0, len(groups))
 	for _, group := range groups {
 		group.GroupBase.healthCheck()
 		groupNames = append(groupNames, group.Name())
+		groupNamesLog = append(groupNamesLog, group.Name())
 	}
-	statistic.DefaultManager.CloseConnectionsUsingProxyGroupsAndProxy(groupNames, proxyName)
+	log.Infoln("[APP] fallback scoped-health-check\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s", f.Name(), proxyName, strings.Join(groupNamesLog, ","))
+	closed := statistic.DefaultManager.CloseConnectionsUsingProxyGroupsAndProxy(groupNames, proxyName)
+	log.Infoln("[APP] fallback scoped-close\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s\tclosed=%d", f.Name(), proxyName, strings.Join(groupNamesLog, ","), closed)
 }
 
 func (f *Fallback) fallbackGroupsUsingProxy(proxyName string) []*Fallback {
