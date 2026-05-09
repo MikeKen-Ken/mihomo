@@ -25,7 +25,10 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-const maxConnectTimesTestEventPrefix = "max-connect-times\t"
+const (
+	maxConnectTimesTestEventPrefix = "max-connect-times\t"
+	proxyGroupRefreshEventPrefix   = "proxy-group-refresh\t"
+)
 
 const (
 	maxConnectTimesConsecutiveFailThreshold = 2
@@ -262,6 +265,7 @@ func (gb *GroupBase) onDialAttempt(proxy C.Proxy, testURL string, expectedStatus
 		}
 	}
 	gb.connectTestMux.Unlock()
+	notifyProxyGroupRefresh(gb.Name())
 
 	if !shouldTest || !gb.connectTesting.CompareAndSwap(false, true) {
 		return
@@ -333,6 +337,7 @@ func (gb *GroupBase) resetConnectTimes() {
 	gb.connectFailedProxy = ""
 	gb.lastConnectTestAt = time.Time{}
 	gb.connectTestMux.Unlock()
+	notifyProxyGroupRefresh(gb.Name())
 }
 
 func (gb *GroupBase) ResetConnectTimes() {

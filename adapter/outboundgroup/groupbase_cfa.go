@@ -11,3 +11,7 @@ func notifyHealthCheckTriggered(name string) {
 func notifyMaxConnectTimesTestTriggered(groupName string, proxyName string) {
 	delegate.NotifyHealthCheckTriggered(maxConnectTimesTestEventPrefix + groupName + "\t" + proxyName)
 }
+
+func notifyProxyGroupRefresh(groupName string) {
+	delegate.NotifyHealthCheckTriggered(proxyGroupRefreshEventPrefix + groupName)
+}
