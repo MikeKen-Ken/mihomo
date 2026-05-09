@@ -3,6 +3,7 @@ package udp
 import (
 	"errors"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,9 +37,12 @@ type ObfsUDPHopClientPacketConn struct {
 	readBufferSize  int
 	writeBufferSize int
 
-	recvQueue chan *udpPacket
-	closeChan chan struct{}
-	closed    bool
+	recvQueue        chan *udpPacket
+	closeChan        chan struct{}
+	closed           bool
+	readDeadline     time.Time
+	writeDeadline    time.Time
+	readDeadlineChan chan struct{}
 
 	bufPool sync.Pool
 }
@@ -87,8 +91,9 @@ func NewObfsUDPHopClientPacketConn(server string, serverPorts string, hopInterva
 		hopInterval: hopInterval,
 		obfs:        obfs,
 		addrIndex:   randv2.IntN(len(serverAddrs)),
-		recvQueue:   make(chan *udpPacket, packetQueueSize),
-		closeChan:   make(chan struct{}),
+		recvQueue:        make(chan *udpPacket, packetQueueSize),
+		closeChan:        make(chan struct{}),
+		readDeadlineChan: make(chan struct{}),
 		bufPool: sync.Pool{
 			New: func() interface{} {
 				return make([]byte, udpBufferSize)
@@ -176,12 +181,29 @@ func (c *ObfsUDPHopClientPacketConn) hop(dialer utils.PacketDialer, rAddr net.Ad
 	if c.writeBufferSize > 0 {
 		_ = trySetPacketConnWriteBuffer(c.currentConn, c.writeBufferSize)
 	}
+	_ = trySetPacketConnWriteDeadline(c.currentConn, c.writeDeadline)
 	go c.recvRoutine(c.currentConn)
 	c.addrIndex = randv2.IntN(len(c.serverAddrs))
 }
 
 func (c *ObfsUDPHopClientPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	for {
+		c.connMutex.RLock()
+		deadline := c.readDeadline
+		deadlineChan := c.readDeadlineChan
+		c.connMutex.RUnlock()
+
+		if !deadline.IsZero() && !time.Now().Before(deadline) {
+			return 0, nil, os.ErrDeadlineExceeded
+		}
+
+		var timer *time.Timer
+		var timeout <-chan time.Time
+		if !deadline.IsZero() {
+			timer = time.NewTimer(time.Until(deadline))
+			timeout = timer.C
+		}
+
 		select {
 		case p := <-c.recvQueue:
 			/*
@@ -202,9 +224,22 @@ func (c *ObfsUDPHopClientPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 			// or something in the future.
 			n := copy(b, p.buf[:p.n])
 			c.bufPool.Put(p.buf)
+			if timer != nil {
+				timer.Stop()
+			}
 			return n, c.serverAddr, nil
 		case <-c.closeChan:
+			if timer != nil {
+				timer.Stop()
+			}
 			return 0, nil, net.ErrClosed
+		case <-timeout:
+			return 0, nil, os.ErrDeadlineExceeded
+		case <-deadlineChan:
+			if timer != nil {
+				timer.Stop()
+			}
+			continue
 		}
 		// Ignore packets from other addresses
 	}
@@ -252,12 +287,22 @@ func (c *ObfsUDPHopClientPacketConn) LocalAddr() net.Addr {
 }
 
 func (c *ObfsUDPHopClientPacketConn) SetReadDeadline(t time.Time) error {
-	// Not supported
+	c.connMutex.Lock()
+	defer c.connMutex.Unlock()
+	c.readDeadline = t
+	close(c.readDeadlineChan)
+	c.readDeadlineChan = make(chan struct{})
 	return nil
 }
 
 func (c *ObfsUDPHopClientPacketConn) SetWriteDeadline(t time.Time) error {
-	// Not supported
+	c.connMutex.Lock()
+	defer c.connMutex.Unlock()
+	c.writeDeadline = t
+	if c.prevConn != nil {
+		_ = trySetPacketConnWriteDeadline(c.prevConn, t)
+	}
+	_ = trySetPacketConnWriteDeadline(c.currentConn, t)
 	return nil
 }
 
@@ -305,6 +350,16 @@ func trySetPacketConnWriteBuffer(pc net.PacketConn, bytes int) error {
 	})
 	if ok {
 		return sc.SetWriteBuffer(bytes)
+	}
+	return nil
+}
+
+func trySetPacketConnWriteDeadline(pc net.PacketConn, t time.Time) error {
+	sc, ok := pc.(interface {
+		SetWriteDeadline(t time.Time) error
+	})
+	if ok {
+		return sc.SetWriteDeadline(t)
 	}
 	return nil
 }

@@ -50,6 +50,9 @@ type Client struct {
 	startOnce        sync.Once
 	healthCheck      bool
 	healthCheckTimer *time.Timer
+	healthCheckReset chan struct{}
+	healthCheckClose chan struct{}
+	healthCheckOnce  sync.Once
 	count            atomic.Int64
 }
 
@@ -111,14 +114,31 @@ func (c *Client) h2RoundTripper(tlsConfig *vmess.TLSConfig) {
 func (c *Client) start() {
 	if c.healthCheck {
 		c.healthCheckTimer = time.NewTimer(DefaultHealthCheckTimeout)
+		c.healthCheckReset = make(chan struct{}, 1)
+		c.healthCheckClose = make(chan struct{})
 		go c.loopHealthCheck()
 	}
 }
 
 func (c *Client) loopHealthCheck() {
+	resetTimer := func() {
+		if !c.healthCheckTimer.Stop() {
+			select {
+			case <-c.healthCheckTimer.C:
+			default:
+			}
+		}
+		c.healthCheckTimer.Reset(DefaultHealthCheckTimeout)
+	}
 	for {
 		select {
 		case <-c.healthCheckTimer.C:
+		case <-c.healthCheckReset:
+			resetTimer()
+			continue
+		case <-c.healthCheckClose:
+			c.healthCheckTimer.Stop()
+			return
 		case <-c.ctx.Done():
 			c.healthCheckTimer.Stop()
 			return
@@ -130,10 +150,13 @@ func (c *Client) loopHealthCheck() {
 }
 
 func (c *Client) resetHealthCheckTimer() {
-	if c.healthCheckTimer == nil {
+	if c.healthCheckReset == nil {
 		return
 	}
-	c.healthCheckTimer.Reset(DefaultHealthCheckTimeout)
+	select {
+	case c.healthCheckReset <- struct{}{}:
+	default:
+	}
 }
 
 func (c *Client) roundTrip(request *http.Request, conn *httpConn) {
@@ -210,8 +233,10 @@ func (c *Client) ListenICMP(ctx context.Context) (*IcmpConn, error) {
 
 func (c *Client) Close() error {
 	httputils.CloseTransport(c.roundTripper)
-	if c.healthCheckTimer != nil {
-		c.healthCheckTimer.Stop()
+	if c.healthCheckClose != nil {
+		c.healthCheckOnce.Do(func() {
+			close(c.healthCheckClose)
+		})
 	}
 	return nil
 }
