@@ -6,8 +6,10 @@ import (
 	"net"
 	"time"
 
+	"github.com/metacubex/mihomo/common/httputils"
+	N "github.com/metacubex/mihomo/common/net"
+
 	"github.com/metacubex/http"
-	"github.com/metacubex/http/h2c"
 	"github.com/metacubex/quic-go/http3"
 	"github.com/metacubex/sing/common"
 	"github.com/metacubex/sing/common/auth"
@@ -16,13 +18,13 @@ import (
 	E "github.com/metacubex/sing/common/exceptions"
 	"github.com/metacubex/sing/common/logger"
 	M "github.com/metacubex/sing/common/metadata"
-	N "github.com/metacubex/sing/common/network"
+	"github.com/metacubex/sing/common/network"
 	"github.com/metacubex/tls"
 )
 
 type Handler interface {
-	N.TCPConnectionHandler
-	N.UDPConnectionHandler
+	network.TCPConnectionHandler
+	network.UDPConnectionHandler
 }
 
 type ICMPHandler interface {
@@ -36,6 +38,7 @@ type ServiceOptions struct {
 	ICMPHandler           ICMPHandler
 	QUICCongestionControl string
 	QUICCwnd              int
+	QUICBBRProfile        string
 }
 
 type Service struct {
@@ -46,8 +49,8 @@ type Service struct {
 	icmpHandler           ICMPHandler
 	quicCongestionControl string
 	quicCwnd              int
+	quicBBRProfile        string
 	httpServer            *http.Server
-	h2Server              *http.Http2Server
 	h3Server              *http3.Server
 	tcpListener           net.Listener
 	tlsListener           net.Listener
@@ -62,24 +65,24 @@ func NewService(options ServiceOptions) *Service {
 		icmpHandler:           options.ICMPHandler,
 		quicCongestionControl: options.QUICCongestionControl,
 		quicCwnd:              options.QUICCwnd,
+		quicBBRProfile:        options.QUICBBRProfile,
 	}
 }
 
 func (s *Service) Start(tcpListener net.Listener, udpConn net.PacketConn, tlsConfig *tls.Config) error {
 	if tcpListener != nil {
-		h2Server := &http.Http2Server{}
+		protocols := new(http.Protocols)
+		protocols.SetHTTP1(true)
+		protocols.SetHTTP2(true)
+		protocols.SetUnencryptedHTTP2(true)
 		s.httpServer = &http.Server{
-			Handler:     h2c.NewHandler(s, h2Server),
+			Handler:     s,
 			IdleTimeout: DefaultSessionTimeout,
 			BaseContext: func(net.Listener) context.Context {
 				return s.ctx
 			},
+			Protocols: protocols,
 		}
-		err := http.Http2ConfigureServer(s.httpServer, h2Server)
-		if err != nil {
-			return err
-		}
-		s.h2Server = h2Server
 		listener := tcpListener
 		s.tcpListener = tcpListener
 		if tlsConfig != nil {
@@ -160,8 +163,8 @@ func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 				},
 			},
 		}
-		conn.SetAddrFromRequest(request)
-		conn.setUp(request.Body, nil)
+		httputils.SetAddrFromRequest(&conn.NetAddr, request)
+		conn.setup(request.Body, nil)
 		firstPacket := buf.NewPacket()
 		destination, err := conn.ReadPacket(firstPacket)
 		if err != nil {
@@ -197,8 +200,8 @@ func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 					created: make(chan struct{}),
 				},
 			}
-			conn.SetAddrFromRequest(request)
-			conn.setUp(request.Body, nil)
+			httputils.SetAddrFromRequest(&conn.NetAddr, request)
+			conn.setup(request.Body, nil)
 			s.icmpHandler.NewICMPConnection(ctx, conn)
 		}
 	case HealthCheckMagicAddress:
@@ -220,9 +223,9 @@ func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 				created: make(chan struct{}),
 			},
 		}
-		conn.SetAddrFromRequest(request)
-		conn.setUp(request.Body, nil)
-		_ = s.handler.NewConnection(ctx, conn, M.Metadata{
+		httputils.SetAddrFromRequest(&conn.NetAddr, request)
+		conn.setup(request.Body, nil)
+		_ = s.handler.NewConnection(ctx, N.NewDeadlineConn(conn), M.Metadata{
 			Protocol:    "trusttunnel",
 			Source:      M.ParseSocksaddr(request.RemoteAddr),
 			Destination: M.ParseSocksaddr(request.Host).Unwrap(),

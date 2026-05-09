@@ -20,11 +20,12 @@ jobs:
           - { goos: android, goarch: arm64, ndk: aarch64-linux-android34, output: arm64-v8 }
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
 
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
+        go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
         go-version: '1.26'
         check-latest: true
 
@@ -91,12 +92,14 @@ jobs:
       shell: bash
 
     - name: Archive production artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: "${{ matrix.jobs.goos }}-${{ matrix.jobs.output }}"
         path: |
           mihomo*.gz
           mihomo*.zip
+          toolchain.tar.gz
+          vendor.tar.gz
           version.txt
 
   Upload-Prerelease:
@@ -106,7 +109,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Download all workflow run artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         path: bin/
         merge-multiple: true
@@ -132,7 +135,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload Prerelease
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       if: ${{  success() }}
       with:
         tag_name: Prerelease-Alpha

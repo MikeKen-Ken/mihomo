@@ -13,14 +13,12 @@ import (
 
 type Selector struct {
 	*GroupBase
-	disableUDP       bool
-	selected         string
-	manualSelected   bool // true only after user or persist Set(); cleared by ClearManualSelection/health/stop
-	testUrl          string
-	expectedStatus   string
-	selectedTimeout  int // ms, for manual-selected node delay test; 0 = skip
-	Hidden           bool
-	Icon             string
+	disableUDP      bool
+	selected        string
+	manualSelected  bool // true only after user or persist Set(); cleared by ClearManualSelection/health/stop
+	testUrl         string
+	expectedStatus  string
+	selectedTimeout int // ms, for manual-selected node delay test; 0 = skip
 }
 
 // DialContext implements C.ProxyAdapter
@@ -73,8 +71,8 @@ func (s *Selector) MarshalJSON() ([]byte, error) {
 		"now":     s.Now(),
 		"all":     all,
 		"testUrl": url,
-		"hidden":  s.Hidden,
-		"icon":    s.Icon,
+		"hidden":  s.Hidden(),
+		"icon":    s.Icon(),
 		"connectTimes":    s.ConnectTimes(),
 		"maxConnectTimes": s.MaxConnectTimes(),
 	})
@@ -166,6 +164,8 @@ func NewSelector(option *GroupCommonOption, providers []P.ProxyProvider) *Select
 		GroupBase: NewGroupBase(GroupBaseOption{
 			Name:                 option.Name,
 			Type:                 C.Selector,
+			Hidden:               option.Hidden,
+			Icon:                 option.Icon,
 			Filter:               option.Filter,
 			ExcludeFilter:        option.ExcludeFilter,
 			ExcludeType:          option.ExcludeType,
@@ -180,7 +180,5 @@ func NewSelector(option *GroupCommonOption, providers []P.ProxyProvider) *Select
 		testUrl:         option.URL,
 		expectedStatus:  option.ExpectedStatus,
 		selectedTimeout: selectedTimeout,
-		Hidden:          option.Hidden,
-		Icon:            option.Icon,
 	}
 }

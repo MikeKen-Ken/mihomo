@@ -29,6 +29,8 @@ const maxConnectTimesTestEventPrefix = "max-connect-times\t"
 
 type GroupBase struct {
 	*outbound.Base
+	hidden            bool
+	icon              string
 	filterRegs        []*regexp2.Regexp
 	excludeFilterRegs []*regexp2.Regexp
 	excludeTypeArray  []string
@@ -54,6 +56,8 @@ type GroupBase struct {
 type GroupBaseOption struct {
 	Name                  string
 	Type                  C.AdapterType
+	Hidden                bool
+	Icon                  string
 	Filter                string
 	ExcludeFilter         string
 	ExcludeType           string
@@ -88,6 +92,8 @@ func NewGroupBase(opt GroupBaseOption) *GroupBase {
 
 	gb := &GroupBase{
 		Base:              outbound.NewBase(outbound.BaseOption{Name: opt.Name, Type: opt.Type}),
+		hidden:            opt.Hidden,
+		icon:              opt.Icon,
 		filterRegs:        filterRegs,
 		excludeFilterRegs: excludeFilterRegs,
 		excludeTypeArray:  excludeTypeArray,
@@ -111,6 +117,14 @@ func NewGroupBase(opt GroupBaseOption) *GroupBase {
 	}
 
 	return gb
+}
+
+func (gb *GroupBase) Hidden() bool {
+	return gb.hidden
+}
+
+func (gb *GroupBase) Icon() string {
+	return gb.icon
 }
 
 func (gb *GroupBase) Touch() {

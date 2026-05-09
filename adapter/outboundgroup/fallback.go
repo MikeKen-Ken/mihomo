@@ -20,8 +20,6 @@ type Fallback struct {
 	selected        string // 手动选择的节点；仅当用户执行「组测速」时由 ClearManualSelection 清空，健康检测/连接失败不触发 fallback
 	expectedStatus  string
 	selectedTimeout int // ms, for selected node only; 0 = use same as normal (AliveForTestUrl)
-	Hidden          bool
-	Icon            string
 }
 
 func (f *Fallback) Now() string {
@@ -98,9 +96,9 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 		"expectedStatus": f.expectedStatus,
 		"fixed":           f.selected,
 		"selectedTimeout": f.selectedTimeout,
-		"hidden":          f.Hidden,
-		"icon":            f.Icon,
-		"connectTimes":    f.ConnectTimes(),
+		"hidden":          f.Hidden(),
+		"icon":            f.Icon(),
+		"connectTimes":     f.ConnectTimes(),
 		"maxConnectTimes": f.MaxConnectTimes(),
 	})
 }
@@ -225,6 +223,8 @@ func NewFallback(option *GroupCommonOption, providers []P.ProxyProvider) *Fallba
 		GroupBase: NewGroupBase(GroupBaseOption{
 			Name:                 option.Name,
 			Type:                 C.Fallback,
+			Hidden:               option.Hidden,
+			Icon:                 option.Icon,
 			Filter:               option.Filter,
 			ExcludeFilter:        option.ExcludeFilter,
 			ExcludeType:          option.ExcludeType,
@@ -238,7 +238,5 @@ func NewFallback(option *GroupCommonOption, providers []P.ProxyProvider) *Fallba
 		testUrl:         option.URL,
 		expectedStatus:  option.ExpectedStatus,
 		selectedTimeout: selectedTimeout,
-		Hidden:          option.Hidden,
-		Icon:            option.Icon,
 	}
 }
