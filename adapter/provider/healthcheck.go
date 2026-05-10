@@ -38,7 +38,7 @@ type HealthCheck struct {
 	lazy           bool
 	expectedStatus utils.IntRanges[uint16]
 	lastTouch      atomic.TypedValue[time.Time]
-	singleDo       *singledo.Single[bool]
+	singleDo       *singledo.Single[struct{}]
 	timeout        time.Duration
 }
 
@@ -142,7 +142,7 @@ func (hc *HealthCheck) touch() {
 }
 
 func (hc *HealthCheck) check() {
-	hc.checkWithMode(false)
+	hc.checkAll()
 }
 
 func (hc *HealthCheck) checkURLUntilHealthy(url string, expectedStatus utils.IntRanges[uint16], targetNames map[string]struct{}) bool {
@@ -159,42 +159,27 @@ func (hc *HealthCheck) checkURLUntilHealthy(url string, expectedStatus utils.Int
 	return foundHealthy
 }
 
-func (hc *HealthCheck) checkWithMode(stopOnFirstHealthy bool) bool {
+func (hc *HealthCheck) checkAll() {
 	if len(hc.proxies) == 0 {
-		return false
+		return
 	}
 	defer hc.notifyHealthCheckCallbacks()
 
-	anyHealthy, _, _ := hc.singleDo.Do(func() (bool, error) {
+	_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
 		id := utils.NewUUIDV4().String()
 		log.Debugln("Start New Health Checking {%s}", id)
-		foundHealthy := false
 
-		// execute default health check
 		option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
-		if hc.execute(hc.url, id, option, stopOnFirstHealthy, nil) {
-			foundHealthy = true
-			if stopOnFirstHealthy {
-				log.Debugln("Stop Health Checking early after default url success, {%s}", id)
-			}
-		}
+		hc.execute(hc.url, id, option, false, nil)
 
-		// execute extra health check
-		if len(hc.extra) != 0 && !(stopOnFirstHealthy && foundHealthy) {
+		if len(hc.extra) != 0 {
 			for url, option := range hc.extra {
-				if hc.execute(url, id, option, stopOnFirstHealthy, nil) {
-					foundHealthy = true
-					if stopOnFirstHealthy {
-						log.Debugln("Stop Health Checking early after extra url success, {%s}", id)
-						break
-					}
-				}
+				hc.execute(url, id, option, false, nil)
 			}
 		}
 		log.Debugln("Finish A Health Checking {%s}", id)
-		return foundHealthy, nil
+		return struct{}{}, nil
 	})
-	return anyHealthy
 }
 
 func (hc *HealthCheck) optionForURL(url string, expectedStatus utils.IntRanges[uint16]) *extraOption {
@@ -274,9 +259,6 @@ func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirst
 	}
 
 	workerLimit := EffectiveHealthCheckWorkerLimit()
-	if workerLimit <= 0 {
-		workerLimit = 30
-	}
 	if workerLimit > len(targets) {
 		workerLimit = len(targets)
 	}
@@ -346,6 +328,6 @@ func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, 
 		interval:       time.Duration(interval) * time.Second,
 		lazy:           lazy,
 		expectedStatus: expectedStatus,
-		singleDo:       singledo.NewSingle[bool](time.Second),
+		singleDo:       singledo.NewSingle[struct{}](time.Second),
 	}
 }

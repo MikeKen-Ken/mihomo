@@ -459,6 +459,7 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 
 	for _, proxyProvider := range gb.providers {
 		if testURL == "" {
+			// testURL 为空时无法做早停判断，退化为全量串行检查
 			proxyProvider.HealthCheck()
 			continue
 		}
