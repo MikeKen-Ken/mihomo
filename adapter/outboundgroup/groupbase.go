@@ -448,17 +448,12 @@ func (gb *GroupBase) healthCheck() {
 	}
 
 	gb.failedTesting.Store(true)
-	wg := sync.WaitGroup{}
 	for _, proxyProvider := range gb.providers {
-		wg.Add(1)
-		proxyProvider := proxyProvider
-		go func() {
-			defer wg.Done()
-			proxyProvider.HealthCheck()
-		}()
+		if proxyProvider.HealthCheckUntilHealthy() {
+			log.Debugln("ProxyGroup: %s stop health check early after finding healthy proxy", gb.Name())
+			break
+		}
 	}
-
-	wg.Wait()
 
 	gb.failedTesting.Store(false)
 	gb.failedTimes = 0

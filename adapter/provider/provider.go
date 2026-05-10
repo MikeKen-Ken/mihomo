@@ -71,6 +71,10 @@ func (bp *baseProvider) HealthCheck() {
 	bp.healthCheck.check()
 }
 
+func (bp *baseProvider) HealthCheckUntilHealthy() bool {
+	return bp.healthCheck.checkUntilHealthy()
+}
+
 func (bp *baseProvider) Type() P.ProviderType {
 	return P.Proxy
 }

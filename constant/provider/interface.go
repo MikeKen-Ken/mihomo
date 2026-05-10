@@ -81,6 +81,7 @@ type ProxyProvider interface {
 	// Commonly used in DialContext and DialPacketConn
 	Touch()
 	HealthCheck()
+	HealthCheckUntilHealthy() bool
 	Version() uint32
 	RegisterHealthCheckTask(url string, expectedStatus utils.IntRanges[uint16], filter string, interval uint)
 	RegisterHealthCheckCallback(callback func())

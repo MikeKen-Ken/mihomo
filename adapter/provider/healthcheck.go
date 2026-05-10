@@ -38,7 +38,7 @@ type HealthCheck struct {
 	lazy           bool
 	expectedStatus utils.IntRanges[uint16]
 	lastTouch      atomic.TypedValue[time.Time]
-	singleDo       *singledo.Single[struct{}]
+	singleDo       *singledo.Single[bool]
 	timeout        time.Duration
 }
 
@@ -142,38 +142,56 @@ func (hc *HealthCheck) touch() {
 }
 
 func (hc *HealthCheck) check() {
+	hc.checkWithMode(false)
+}
+
+func (hc *HealthCheck) checkUntilHealthy() bool {
+	return hc.checkWithMode(true)
+}
+
+func (hc *HealthCheck) checkWithMode(stopOnFirstHealthy bool) bool {
 	if len(hc.proxies) == 0 {
-		return
+		return false
 	}
 	defer hc.notifyHealthCheckCallbacks()
 
-	_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
+	anyHealthy, _, _ := hc.singleDo.Do(func() (bool, error) {
 		id := utils.NewUUIDV4().String()
 		log.Debugln("Start New Health Checking {%s}", id)
-		b := new(errgroup.Group)
-		b.SetLimit(EffectiveHealthCheckWorkerLimit())
+		foundHealthy := false
 
 		// execute default health check
 		option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
-		hc.execute(b, hc.url, id, option)
-
-		// execute extra health check
-		if len(hc.extra) != 0 {
-			for url, option := range hc.extra {
-				hc.execute(b, url, id, option)
+		if hc.execute(hc.url, id, option, stopOnFirstHealthy) {
+			foundHealthy = true
+			if stopOnFirstHealthy {
+				log.Debugln("Stop Health Checking early after default url success, {%s}", id)
 			}
 		}
-		_ = b.Wait()
+
+		// execute extra health check
+		if len(hc.extra) != 0 && !(stopOnFirstHealthy && foundHealthy) {
+			for url, option := range hc.extra {
+				if hc.execute(url, id, option, stopOnFirstHealthy) {
+					foundHealthy = true
+					if stopOnFirstHealthy {
+						log.Debugln("Stop Health Checking early after extra url success, {%s}", id)
+						break
+					}
+				}
+			}
+		}
 		log.Debugln("Finish A Health Checking {%s}", id)
-		return struct{}{}, nil
+		return foundHealthy, nil
 	})
+	return anyHealthy
 }
 
-func (hc *HealthCheck) execute(b *errgroup.Group, url, uid string, option *extraOption) {
+func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirstHealthy bool) bool {
 	url = strings.TrimSpace(url)
 	if len(url) == 0 {
 		log.Debugln("Health Check has been skipped due to testUrl is empty, {%s}", uid)
-		return
+		return false
 	}
 
 	var filterReg *regexp2.Regexp
@@ -190,6 +208,7 @@ func (hc *HealthCheck) execute(b *errgroup.Group, url, uid string, option *extra
 		}
 	}
 
+	targets := make([]C.Proxy, 0, len(hc.proxies))
 	for _, proxy := range hc.proxies {
 		// skip proxies that do not require health check
 		if filterReg != nil {
@@ -197,17 +216,60 @@ func (hc *HealthCheck) execute(b *errgroup.Group, url, uid string, option *extra
 				continue
 			}
 		}
-
-		p := proxy
-		b.Go(func() error {
-			ctx, cancel := context.WithTimeout(hc.ctx, hc.timeout)
-			defer cancel()
-			log.Debugln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
-			_, _ = p.URLTest(ctx, url, expectedStatus)
-			log.Debugln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, p.AliveForTestUrl(url), p.LastDelayForTestUrl(url), uid)
-			return nil
-		})
+		targets = append(targets, proxy)
 	}
+
+	if len(targets) == 0 {
+		return false
+	}
+
+	workerLimit := EffectiveHealthCheckWorkerLimit()
+	if workerLimit <= 0 {
+		workerLimit = 30
+	}
+	if workerLimit > len(targets) {
+		workerLimit = len(targets)
+	}
+
+	anyHealthy := false
+	for start := 0; start < len(targets); start += workerLimit {
+		end := start + workerLimit
+		if end > len(targets) {
+			end = len(targets)
+		}
+		batch := targets[start:end]
+		foundHealthy := false
+		healthyMux := sync.Mutex{}
+		b := new(errgroup.Group)
+
+		for _, proxy := range batch {
+			p := proxy
+			b.Go(func() error {
+				ctx, cancel := context.WithTimeout(hc.ctx, hc.timeout)
+				defer cancel()
+				log.Debugln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
+				_, err := p.URLTest(ctx, url, expectedStatus)
+				alive := err == nil && p.AliveForTestUrl(url)
+				log.Debugln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+				if alive {
+					healthyMux.Lock()
+					foundHealthy = true
+					healthyMux.Unlock()
+				}
+				return nil
+			})
+		}
+
+		_ = b.Wait()
+		if foundHealthy && stopOnFirstHealthy {
+			log.Debugln("Health Checking batch hit healthy proxy, stop next batch, url: %s, id: {%s}", url, uid)
+			return true
+		}
+		if foundHealthy {
+			anyHealthy = true
+		}
+	}
+	return anyHealthy
 }
 
 func (hc *HealthCheck) close() {
@@ -234,6 +296,6 @@ func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, 
 		interval:       time.Duration(interval) * time.Second,
 		lazy:           lazy,
 		expectedStatus: expectedStatus,
-		singleDo:       singledo.NewSingle[struct{}](time.Second),
+		singleDo:       singledo.NewSingle[bool](time.Second),
 	}
 }
