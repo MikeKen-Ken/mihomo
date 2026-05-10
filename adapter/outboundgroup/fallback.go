@@ -86,7 +86,7 @@ func (f *Fallback) healthCheck() {
 func (f *Fallback) healthCheckForProxy(proxy C.Proxy) {
 	if proxy == nil {
 		log.Warnln("[APP] fallback scoped-health-check\tgroup=%s\tproxy=<nil>\tscope=self-only", f.Name())
-		f.GroupBase.healthCheck()
+		f.GroupBase.healthCheck(f.testUrl, f.expectedStatus)
 		closed := statistic.DefaultManager.CloseConnectionsUsingProxyGroup(f.Name())
 		log.Warnln("[APP] fallback scoped-close\tgroup=%s\tproxy=<nil>\tclosed=%d", f.Name(), closed)
 		return
@@ -97,7 +97,7 @@ func (f *Fallback) healthCheckForProxy(proxy C.Proxy) {
 	groupNames := make([]string, 0, len(groups))
 	groupNamesLog := make([]string, 0, len(groups))
 	for _, group := range groups {
-		group.GroupBase.healthCheck()
+		group.GroupBase.healthCheck(group.testUrl, group.expectedStatus)
 		groupNames = append(groupNames, group.Name())
 		groupNamesLog = append(groupNamesLog, group.Name())
 	}

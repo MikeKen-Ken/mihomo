@@ -108,7 +108,7 @@ func (u *URLTest) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 
 func (u *URLTest) healthCheck() {
 	u.fastSingle.Reset()
-	u.GroupBase.healthCheck()
+	u.GroupBase.healthCheck(u.testUrl, u.expectedStatus)
 	u.fastSingle.Reset()
 }
 

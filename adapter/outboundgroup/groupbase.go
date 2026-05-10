@@ -436,10 +436,13 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 	}()
 }
 
-func (gb *GroupBase) healthCheck() {
-	if gb.failedTesting.Load() {
+func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
+	if !gb.failedTesting.CompareAndSwap(false, true) {
 		return
 	}
+	defer func() {
+		gb.failedTesting.Store(false)
+	}()
 
 	// Notify health check triggered for fallback groups (CFA only)
 	if gb.Type() == C.Fallback {
@@ -447,17 +450,35 @@ func (gb *GroupBase) healthCheck() {
 		notifyHealthCheckTriggered(gb.Name())
 	}
 
-	gb.failedTesting.Store(true)
+	expectedStatus, err := utils.NewUnsignedRanges[uint16](expectedStatusText)
+	if err != nil {
+		log.Warnln("ProxyGroup: %s parse expected status failed: %s", gb.Name(), err.Error())
+		expectedStatus = nil
+	}
+	targetNames := gb.healthCheckTargetNames()
+
 	for _, proxyProvider := range gb.providers {
-		if proxyProvider.HealthCheckUntilHealthy() {
+		if testURL == "" {
+			proxyProvider.HealthCheck()
+			continue
+		}
+		if proxyProvider.HealthCheckURLUntilHealthy(testURL, expectedStatus, targetNames) {
 			log.Debugln("ProxyGroup: %s stop health check early after finding healthy proxy", gb.Name())
 			break
 		}
 	}
 
-	gb.failedTesting.Store(false)
 	gb.failedTimes = 0
 	gb.resetConnectTimes()
+}
+
+func (gb *GroupBase) healthCheckTargetNames() map[string]struct{} {
+	proxies := gb.GetProxies(false)
+	names := make(map[string]struct{}, len(proxies))
+	for _, proxy := range proxies {
+		names[proxy.Name()] = struct{}{}
+	}
+	return names
 }
 
 func (gb *GroupBase) onDialSuccess() {

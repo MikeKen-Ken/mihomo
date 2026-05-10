@@ -127,6 +127,10 @@ func (lb *LoadBalance) CountRequest(metadata *C.Metadata) {
 	lb.onRequestAttempt(lb.Unwrap(metadata, false), lb.testUrl, lb.expectedStatus, lb.healthCheck)
 }
 
+func (lb *LoadBalance) healthCheck() {
+	lb.GroupBase.healthCheck(lb.testUrl, lb.expectedStatus)
+}
+
 // SupportUDP implements C.ProxyAdapter
 func (lb *LoadBalance) SupportUDP() bool {
 	return !lb.disableUDP

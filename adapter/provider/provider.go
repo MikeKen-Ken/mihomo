@@ -71,8 +71,8 @@ func (bp *baseProvider) HealthCheck() {
 	bp.healthCheck.check()
 }
 
-func (bp *baseProvider) HealthCheckUntilHealthy() bool {
-	return bp.healthCheck.checkUntilHealthy()
+func (bp *baseProvider) HealthCheckURLUntilHealthy(url string, expectedStatus utils.IntRanges[uint16], targetNames map[string]struct{}) bool {
+	return bp.healthCheck.checkURLUntilHealthy(url, expectedStatus, targetNames)
 }
 
 func (bp *baseProvider) Type() P.ProviderType {

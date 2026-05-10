@@ -145,8 +145,18 @@ func (hc *HealthCheck) check() {
 	hc.checkWithMode(false)
 }
 
-func (hc *HealthCheck) checkUntilHealthy() bool {
-	return hc.checkWithMode(true)
+func (hc *HealthCheck) checkURLUntilHealthy(url string, expectedStatus utils.IntRanges[uint16], targetNames map[string]struct{}) bool {
+	if len(hc.proxies) == 0 {
+		return false
+	}
+	defer hc.notifyHealthCheckCallbacks()
+
+	id := utils.NewUUIDV4().String()
+	log.Debugln("Start New Health Checking Until Healthy {%s}", id)
+	option := hc.optionForURL(url, expectedStatus)
+	foundHealthy := hc.execute(url, id, option, true, targetNames)
+	log.Debugln("Finish A Health Checking Until Healthy {%s}", id)
+	return foundHealthy
 }
 
 func (hc *HealthCheck) checkWithMode(stopOnFirstHealthy bool) bool {
@@ -162,7 +172,7 @@ func (hc *HealthCheck) checkWithMode(stopOnFirstHealthy bool) bool {
 
 		// execute default health check
 		option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
-		if hc.execute(hc.url, id, option, stopOnFirstHealthy) {
+		if hc.execute(hc.url, id, option, stopOnFirstHealthy, nil) {
 			foundHealthy = true
 			if stopOnFirstHealthy {
 				log.Debugln("Stop Health Checking early after default url success, {%s}", id)
@@ -172,7 +182,7 @@ func (hc *HealthCheck) checkWithMode(stopOnFirstHealthy bool) bool {
 		// execute extra health check
 		if len(hc.extra) != 0 && !(stopOnFirstHealthy && foundHealthy) {
 			for url, option := range hc.extra {
-				if hc.execute(url, id, option, stopOnFirstHealthy) {
+				if hc.execute(url, id, option, stopOnFirstHealthy, nil) {
 					foundHealthy = true
 					if stopOnFirstHealthy {
 						log.Debugln("Stop Health Checking early after extra url success, {%s}", id)
@@ -187,7 +197,41 @@ func (hc *HealthCheck) checkWithMode(stopOnFirstHealthy bool) bool {
 	return anyHealthy
 }
 
-func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirstHealthy bool) bool {
+func (hc *HealthCheck) optionForURL(url string, expectedStatus utils.IntRanges[uint16]) *extraOption {
+	url = strings.TrimSpace(url)
+	if url == hc.url {
+		return &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
+	}
+
+	hc.mu.Lock()
+	option, ok := hc.extra[url]
+	if ok {
+		option = cloneExtraOption(option)
+	}
+	hc.mu.Unlock()
+	if ok {
+		return option
+	}
+
+	return &extraOption{filters: nil, expectedStatus: expectedStatus}
+}
+
+func cloneExtraOption(option *extraOption) *extraOption {
+	if option == nil {
+		return nil
+	}
+
+	clone := &extraOption{expectedStatus: option.expectedStatus}
+	if len(option.filters) != 0 {
+		clone.filters = make(map[string]struct{}, len(option.filters))
+		for filter := range option.filters {
+			clone.filters[filter] = struct{}{}
+		}
+	}
+	return clone
+}
+
+func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirstHealthy bool, targetNames map[string]struct{}) bool {
 	url = strings.TrimSpace(url)
 	if len(url) == 0 {
 		log.Debugln("Health Check has been skipped due to testUrl is empty, {%s}", uid)
@@ -210,6 +254,12 @@ func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirst
 
 	targets := make([]C.Proxy, 0, len(hc.proxies))
 	for _, proxy := range hc.proxies {
+		if targetNames != nil {
+			if _, ok := targetNames[proxy.Name()]; !ok {
+				continue
+			}
+		}
+
 		// skip proxies that do not require health check
 		if filterReg != nil {
 			if match, _ := filterReg.MatchString(proxy.Name()); !match {
