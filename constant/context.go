@@ -28,6 +28,28 @@ func SuppressGroupOutboundFailureStats(ctx context.Context) bool {
 	return v
 }
 
+type ctxKeyHealthCheckSourceName struct{}
+
+// WithHealthCheckSourceName 在 ctx 上附带健康检查来源标识（如策略组名、provider 名），供 URLTest 日志输出。
+func WithHealthCheckSourceName(parent context.Context, name string) context.Context {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if name == "" {
+		return parent
+	}
+	return context.WithValue(parent, ctxKeyHealthCheckSourceName{}, name)
+}
+
+// HealthCheckSourceName 返回 WithHealthCheckSourceName 设置的名称；未设置时为空字符串。
+func HealthCheckSourceName(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	s, _ := ctx.Value(ctxKeyHealthCheckSourceName{}).(string)
+	return s
+}
+
 type PlainContext interface {
 	ID() uuid.UUID
 }

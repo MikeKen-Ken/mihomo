@@ -167,7 +167,11 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 	ctx = C.WithSuppressGroupOutboundFailureStats(ctx)
 	var satisfied bool
 	uid := utils.NewUUIDV4().String()
-	log.Infoln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
+	if src := C.HealthCheckSourceName(ctx); src != "" {
+		log.Infoln("[%s] Health Checking, proxy: %s, url: %s, id: {%s}", src, p.Name(), url, uid)
+	} else {
+		log.Infoln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
+	}
 
 	defer func() {
 		alive := err == nil
@@ -200,7 +204,11 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 			state.history.Pop()
 		}
 
-		log.Infoln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+		if src := C.HealthCheckSourceName(ctx); src != "" {
+			log.Infoln("[%s] Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", src, p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+		} else {
+			log.Infoln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+		}
 	}()
 
 	unifiedDelay := UnifiedDelay.Load()

@@ -241,6 +241,7 @@ func (f *Fallback) Set(name string) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
 		defer cancel()
+		ctx = C.WithHealthCheckSourceName(ctx, f.Name())
 		expectedStatus, _ := utils.NewUnsignedRanges[uint16](f.expectedStatus)
 		_, _ = p.URLTest(ctx, f.testUrl, expectedStatus)
 	}()

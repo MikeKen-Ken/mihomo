@@ -107,6 +107,7 @@ func (s *Selector) Set(name string) error {
 
 			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(s.selectedTimeout))
 			defer cancel()
+			ctx = C.WithHealthCheckSourceName(ctx, s.Name())
 			expectedStatus, _ := utils.NewUnsignedRanges[uint16](s.expectedStatus)
 			_, _ = selectedProxy.URLTest(ctx, s.testUrl, expectedStatus)
 		}()

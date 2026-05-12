@@ -315,6 +315,7 @@ func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedSta
 		runURLTest := func() (uint16, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
 			defer cancel()
+			ctx = C.WithHealthCheckSourceName(ctx, gb.Name())
 
 			return proxy.URLTest(ctx, testURL, status)
 		}
@@ -370,6 +371,8 @@ func (gb *GroupBase) MaxConnectTimes() int {
 func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (map[string]uint16, error) {
 	defer gb.resetConnectTimes()
 
+	testCtx := C.WithHealthCheckSourceName(ctx, gb.Name())
+
 	var wg sync.WaitGroup
 	var lock sync.Mutex
 	mp := map[string]uint16{}
@@ -378,7 +381,7 @@ func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus uti
 		proxy := proxy
 		wg.Add(1)
 		go func() {
-			delay, err := proxy.URLTest(ctx, url, expectedStatus)
+			delay, err := proxy.URLTest(testCtx, url, expectedStatus)
 			if err == nil {
 				lock.Lock()
 				mp[proxy.Name()] = delay

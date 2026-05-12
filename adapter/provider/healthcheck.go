@@ -278,7 +278,8 @@ func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirst
 		for _, proxy := range batch {
 			p := proxy
 			b.Go(func() error {
-				ctx, cancel := context.WithTimeout(hc.ctx, hc.timeout)
+				base := C.WithHealthCheckSourceName(hc.ctx, hc.name)
+				ctx, cancel := context.WithTimeout(base, hc.timeout)
 				defer cancel()
 				_, err := p.URLTest(ctx, url, expectedStatus)
 				alive := err == nil && p.AliveForTestUrl(url)
