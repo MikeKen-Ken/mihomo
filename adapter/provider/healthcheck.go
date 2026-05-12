@@ -279,10 +279,8 @@ func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirst
 			b.Go(func() error {
 				ctx, cancel := context.WithTimeout(hc.ctx, hc.timeout)
 				defer cancel()
-				log.Debugln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
 				_, err := p.URLTest(ctx, url, expectedStatus)
 				alive := err == nil && p.AliveForTestUrl(url)
-				log.Debugln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
 				if alive {
 					healthyMux.Lock()
 					foundHealthy = true
