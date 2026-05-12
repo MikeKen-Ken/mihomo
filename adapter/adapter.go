@@ -164,6 +164,7 @@ func (p *Proxy) MarshalJSON() ([]byte, error) {
 // URLTest get the delay for the specified URL
 // implements C.Proxy
 func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (t uint16, err error) {
+	ctx = C.WithSuppressGroupOutboundFailureStats(ctx)
 	var satisfied bool
 	uid := utils.NewUUIDV4().String()
 	log.Infoln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)

@@ -259,6 +259,14 @@ func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedSta
 	if gb.maxConnectTimes <= 0 || proxy == nil || testURL == "" {
 		return
 	}
+	// 健康检查期间不计 max-connect-times 请求计数，避免与真实流量叠加误触发
+	if gb.failedTesting.Load() {
+		return
+	}
+	// max-connect-times 内置 URL 测速期间不计数，避免测速连接抬高计数
+	if gb.connectTesting.Load() {
+		return
+	}
 
 	adapterType := proxy.Type()
 	if adapterType == C.Direct || adapterType == C.Compatible || adapterType == C.Reject || adapterType == C.Pass || adapterType == C.RejectDrop {
@@ -389,7 +397,15 @@ func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus uti
 	}
 }
 
-func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func()) {
+// shouldSuppressDialFailureStats 测速（URLTest 标记的 ctx）或本组健康检查期间不计入 max-failed-times。
+func (gb *GroupBase) shouldSuppressDialFailureStats(ctx context.Context) bool {
+	if gb.failedTesting.Load() {
+		return true
+	}
+	return C.SuppressGroupOutboundFailureStats(ctx)
+}
+
+func (gb *GroupBase) onDialFailed(ctx context.Context, adapterType C.AdapterType, err error, fn func()) {
 	if adapterType == C.Direct || adapterType == C.Compatible || adapterType == C.Reject || adapterType == C.Pass || adapterType == C.RejectDrop {
 		return
 	}
@@ -399,6 +415,9 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 	}
 
 	go func() {
+		if gb.shouldSuppressDialFailureStats(ctx) {
+			return
+		}
 		if strings.Contains(err.Error(), "connection refused") {
 			log.Warnln("[APP] max-failed-times health-check triggered\tgroup=%s\treason=connection-refused", gb.Name())
 			fn()
@@ -557,12 +576,12 @@ func (c *postConnectFailureConn) shouldNotifyWrite() bool {
 	return true
 }
 
-func (gb *GroupBase) observePostConnectFailure(c C.Conn, adapterType C.AdapterType, skipFirstWrite bool, fn func()) C.Conn {
+func (gb *GroupBase) observePostConnectFailure(ctx context.Context, c C.Conn, adapterType C.AdapterType, skipFirstWrite bool, fn func()) C.Conn {
 	return &postConnectFailureConn{
 		Conn:           c,
 		skipFirstWrite: skipFirstWrite,
 		callback: func(err error) {
-			gb.onDialFailed(adapterType, err, fn)
+			gb.onDialFailed(ctx, adapterType, err, fn)
 		},
 	}
 }
