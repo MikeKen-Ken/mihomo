@@ -1048,7 +1048,7 @@ func parseProxies(cfg *RawConfig) (proxies map[string]C.Proxy, providersMap map[
 		}
 	}
 
-	hc := provider.NewHealthCheck(ps, globalURL, uint(globalTimeout), 0, true, nil, provider.ReservedName)
+	hc := provider.NewHealthCheck(ps, provider.ReservedName, globalURL, uint(globalTimeout), 0, true, nil)
 	pd, _ := provider.NewCompatibleProvider(provider.ReservedName, ps, hc)
 	providersMap[provider.ReservedName] = pd
 
