@@ -40,6 +40,15 @@ type HealthCheck struct {
 	lastTouch      atomic.TypedValue[time.Time]
 	singleDo       *singledo.Single[struct{}]
 	timeout        time.Duration
+	// owner 用于日志：策略组名、proxy-provider 名或内置 default（GLOBAL 代理池）
+	owner string
+}
+
+func (hc *HealthCheck) logGroup() string {
+	if hc != nil && hc.owner != "" {
+		return hc.owner
+	}
+	return "-"
 }
 
 func (hc *HealthCheck) process() {
@@ -53,7 +62,7 @@ func (hc *HealthCheck) process() {
 			if !hc.lazy || since < hc.interval {
 				hc.check()
 			} else {
-				log.Infoln("Skip once health check because we are lazy")
+				log.Infoln("Skip once health check because we are lazy\tgroup=%s", hc.logGroup())
 			}
 		case <-hc.ctx.Done():
 			ticker.Stop()
@@ -69,7 +78,7 @@ func (hc *HealthCheck) setProxies(proxies []C.Proxy) {
 func (hc *HealthCheck) registerHealthCheckTask(url string, expectedStatus utils.IntRanges[uint16], filter string, interval uint) {
 	url = strings.TrimSpace(url)
 	if len(url) == 0 || url == hc.url {
-		log.Infoln("ignore invalid health check url: %s", url)
+		log.Infoln("ignore invalid health check url: %s\tgroup=%s", url, hc.logGroup())
 		return
 	}
 
@@ -92,7 +101,7 @@ func (hc *HealthCheck) registerHealthCheckTask(url string, expectedStatus utils.
 			splitAndAddFiltersToExtra(filter, hc.extra[url])
 		}
 
-		log.Infoln("health check url: %s exists", url)
+		log.Infoln("health check url: %s exists\tgroup=%s", url, hc.logGroup())
 		return
 	}
 
@@ -152,10 +161,10 @@ func (hc *HealthCheck) checkURLUntilHealthy(url string, expectedStatus utils.Int
 	defer hc.notifyHealthCheckCallbacks()
 
 	id := utils.NewUUIDV4().String()
-	log.Infoln("Start New Health Checking Until Healthy {%s}", id)
+	log.Infoln("Start New Health Checking Until Healthy {%s}\tgroup=%s", id, hc.logGroup())
 	option := hc.optionForURL(url, expectedStatus)
 	foundHealthy := hc.execute(url, id, option, true, targetNames)
-	log.Infoln("Finish A Health Checking Until Healthy {%s}", id)
+	log.Infoln("Finish A Health Checking Until Healthy {%s}\tgroup=%s", id, hc.logGroup())
 	return foundHealthy
 }
 
@@ -167,7 +176,7 @@ func (hc *HealthCheck) checkAll() {
 
 	_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
 		id := utils.NewUUIDV4().String()
-		log.Infoln("Start New Health Checking {%s}", id)
+		log.Infoln("Start New Health Checking {%s}\tgroup=%s", id, hc.logGroup())
 
 		option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
 		hc.execute(hc.url, id, option, false, nil)
@@ -177,7 +186,7 @@ func (hc *HealthCheck) checkAll() {
 				hc.execute(url, id, option, false, nil)
 			}
 		}
-		log.Infoln("Finish A Health Checking {%s}", id)
+		log.Infoln("Finish A Health Checking {%s}\tgroup=%s", id, hc.logGroup())
 		return struct{}{}, nil
 	})
 }
@@ -219,7 +228,7 @@ func cloneExtraOption(option *extraOption) *extraOption {
 func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirstHealthy bool, targetNames map[string]struct{}) bool {
 	url = strings.TrimSpace(url)
 	if len(url) == 0 {
-		log.Infoln("Health Check has been skipped due to testUrl is empty, {%s}", uid)
+		log.Infoln("Health Check has been skipped due to testUrl is empty, {%s}\tgroup=%s", uid, hc.logGroup())
 		return false
 	}
 
@@ -292,7 +301,7 @@ func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirst
 
 		_ = b.Wait()
 		if foundHealthy && stopOnFirstHealthy {
-			log.Infoln("Health Checking batch hit healthy proxy, stop next batch, url: %s, id: {%s}", url, uid)
+			log.Infoln("Health Checking batch hit healthy proxy, stop next batch, url: %s, id: {%s}\tgroup=%s", url, uid, hc.logGroup())
 			return true
 		}
 		if foundHealthy {
@@ -306,7 +315,7 @@ func (hc *HealthCheck) close() {
 	hc.ctxCancel()
 }
 
-func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, lazy bool, expectedStatus utils.IntRanges[uint16]) *HealthCheck {
+func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, lazy bool, expectedStatus utils.IntRanges[uint16], owner string) *HealthCheck {
 	if url == "" {
 		expectedStatus = nil
 		interval = 0
@@ -327,5 +336,6 @@ func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, 
 		lazy:           lazy,
 		expectedStatus: expectedStatus,
 		singleDo:       singledo.NewSingle[struct{}](time.Second),
+		owner:          owner,
 	}
 }
