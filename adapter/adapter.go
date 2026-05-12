@@ -166,7 +166,7 @@ func (p *Proxy) MarshalJSON() ([]byte, error) {
 func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (t uint16, err error) {
 	var satisfied bool
 	uid := utils.NewUUIDV4().String()
-	log.Debugln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
+	log.Infoln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
 
 	defer func() {
 		alive := err == nil
@@ -199,7 +199,7 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 			state.history.Pop()
 		}
 
-		log.Debugln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+		log.Infoln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
 	}()
 
 	unifiedDelay := UnifiedDelay.Load()

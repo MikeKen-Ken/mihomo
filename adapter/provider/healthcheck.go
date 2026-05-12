@@ -53,7 +53,7 @@ func (hc *HealthCheck) process() {
 			if !hc.lazy || since < hc.interval {
 				hc.check()
 			} else {
-				log.Debugln("Skip once health check because we are lazy")
+				log.Infoln("Skip once health check because we are lazy")
 			}
 		case <-hc.ctx.Done():
 			ticker.Stop()
@@ -69,7 +69,7 @@ func (hc *HealthCheck) setProxies(proxies []C.Proxy) {
 func (hc *HealthCheck) registerHealthCheckTask(url string, expectedStatus utils.IntRanges[uint16], filter string, interval uint) {
 	url = strings.TrimSpace(url)
 	if len(url) == 0 || url == hc.url {
-		log.Debugln("ignore invalid health check url: %s", url)
+		log.Infoln("ignore invalid health check url: %s", url)
 		return
 	}
 
@@ -92,7 +92,7 @@ func (hc *HealthCheck) registerHealthCheckTask(url string, expectedStatus utils.
 			splitAndAddFiltersToExtra(filter, hc.extra[url])
 		}
 
-		log.Debugln("health check url: %s exists", url)
+		log.Infoln("health check url: %s exists", url)
 		return
 	}
 
@@ -152,10 +152,10 @@ func (hc *HealthCheck) checkURLUntilHealthy(url string, expectedStatus utils.Int
 	defer hc.notifyHealthCheckCallbacks()
 
 	id := utils.NewUUIDV4().String()
-	log.Debugln("Start New Health Checking Until Healthy {%s}", id)
+	log.Infoln("Start New Health Checking Until Healthy {%s}", id)
 	option := hc.optionForURL(url, expectedStatus)
 	foundHealthy := hc.execute(url, id, option, true, targetNames)
-	log.Debugln("Finish A Health Checking Until Healthy {%s}", id)
+	log.Infoln("Finish A Health Checking Until Healthy {%s}", id)
 	return foundHealthy
 }
 
@@ -167,7 +167,7 @@ func (hc *HealthCheck) checkAll() {
 
 	_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
 		id := utils.NewUUIDV4().String()
-		log.Debugln("Start New Health Checking {%s}", id)
+		log.Infoln("Start New Health Checking {%s}", id)
 
 		option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
 		hc.execute(hc.url, id, option, false, nil)
@@ -177,7 +177,7 @@ func (hc *HealthCheck) checkAll() {
 				hc.execute(url, id, option, false, nil)
 			}
 		}
-		log.Debugln("Finish A Health Checking {%s}", id)
+		log.Infoln("Finish A Health Checking {%s}", id)
 		return struct{}{}, nil
 	})
 }
@@ -219,7 +219,7 @@ func cloneExtraOption(option *extraOption) *extraOption {
 func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirstHealthy bool, targetNames map[string]struct{}) bool {
 	url = strings.TrimSpace(url)
 	if len(url) == 0 {
-		log.Debugln("Health Check has been skipped due to testUrl is empty, {%s}", uid)
+		log.Infoln("Health Check has been skipped due to testUrl is empty, {%s}", uid)
 		return false
 	}
 
@@ -292,7 +292,7 @@ func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirst
 
 		_ = b.Wait()
 		if foundHealthy && stopOnFirstHealthy {
-			log.Debugln("Health Checking batch hit healthy proxy, stop next batch, url: %s, id: {%s}", url, uid)
+			log.Infoln("Health Checking batch hit healthy proxy, stop next batch, url: %s, id: {%s}", url, uid)
 			return true
 		}
 		if foundHealthy {

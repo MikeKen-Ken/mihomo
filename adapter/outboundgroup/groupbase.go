@@ -332,7 +332,7 @@ func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedSta
 
 		log.Warnln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxy.Name(), retryErr)
 		log.Warnln("[APP] max-connect-times health-check triggered\tgroup=%s\tproxy=%s\treason=retry-fail", gb.Name(), proxy.Name())
-		log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test twice, trigger health check", gb.Name(), proxy.Name())
+		log.Infoln("ProxyGroup: %s current proxy %s failed max connect times test twice, trigger health check", gb.Name(), proxy.Name())
 		fn()
 	}()
 }
@@ -446,7 +446,7 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 
 	// Notify health check triggered for fallback groups (CFA only)
 	if gb.Type() == C.Fallback {
-		log.Debugln("Fallback group %s triggered health check", gb.Name())
+		log.Infoln("Fallback group %s triggered health check", gb.Name())
 		notifyHealthCheckTriggered(gb.Name())
 	}
 
@@ -464,7 +464,7 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 			continue
 		}
 		if proxyProvider.HealthCheckURLUntilHealthy(testURL, expectedStatus, targetNames) {
-			log.Debugln("ProxyGroup: %s stop health check early after finding healthy proxy", gb.Name())
+			log.Infoln("ProxyGroup: %s stop health check early after finding healthy proxy", gb.Name())
 			break
 		}
 	}
