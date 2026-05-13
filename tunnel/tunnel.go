@@ -778,7 +778,7 @@ func logMetadataErr(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err
 		log.Warnln("[%s] 拨号 %s %s --> %s 错误: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
 	} else {
 		ruleInfo := formatRuleInfo(rule, metadata)
-		log.Warnln("[%s] 拨号 %s (匹配 %s) %s --> %s 错误: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), ruleInfo, metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
+		log.Warnln("[%s] %s --> %s --> %s，拨号 %s 错误: %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), ruleInfo, proxy.Name(), err.Error())
 	}
 }
 
@@ -787,18 +787,19 @@ func logMetadata(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
 		logMetadataCMFA(metadata, rule, remoteConn)
 		return
 	}
+	// 非 CMFA：连接日志统一为「源 --> 目的 --> …」链式箭头，便于客户端解析（与 CMFA 分支风格一致）
 	switch {
 	case metadata.SpecialProxy != "":
-		log.Infoln("[%s] %s --> %s 使用 %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
+		log.Infoln("[%s] %s --> %s --> %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
 	case rule != nil:
 		ruleInfo := formatRuleInfo(rule, metadata)
-		log.Infoln("[%s] %s --> %s 匹配 %s 使用 %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), ruleInfo, remoteConn.Chains().String())
+		log.Infoln("[%s] %s --> %s --> %s --> %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), ruleInfo, remoteConn.Chains().String())
 	case mode == Global:
-		log.Infoln("[%s] %s --> %s 使用 GLOBAL", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
+		log.Infoln("[%s] %s --> %s --> GLOBAL", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
 	case mode == Direct:
-		log.Infoln("[%s] %s --> %s 使用 DIRECT", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
+		log.Infoln("[%s] %s --> %s --> DIRECT", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
 	default:
-		log.Infoln("[%s] %s --> %s 未匹配任何规则，使用 %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
+		log.Infoln("[%s] %s --> %s --> 未匹配任何规则 --> %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
 	}
 }
 
