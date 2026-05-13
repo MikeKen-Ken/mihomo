@@ -168,14 +168,14 @@ func (hc *HealthCheck) checkAll() {
 
 	_, _, _ = hc.singleDo.Do(func() (struct{}, error) {
 		id := utils.NewUUIDV4().String()
-		log.Infoln("[%s] 开始健康检测 {%s}", hc.name, id)
+		log.Infoln("[%s] 开始健康检测（命中可用节点后按批次提前结束）{%s}", hc.name, id)
 
 		option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
-		hc.execute(hc.url, id, option, false, nil)
+		hc.execute(hc.url, id, option, true, nil)
 
 		if len(hc.extra) != 0 {
 			for url, option := range hc.extra {
-				hc.execute(url, id, option, false, nil)
+				hc.execute(url, id, option, true, nil)
 			}
 		}
 		log.Infoln("[%s] 健康检测完成 {%s}", hc.name, id)
@@ -294,12 +294,15 @@ func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirst
 
 		_ = b.Wait()
 		if foundHealthy && stopOnFirstHealthy {
-			log.Infoln("[%s] 健康检测批次命中可用节点，停止后续批次，url: %s, id: {%s}", hc.name, url, uid)
+			log.Infoln("[%s] 已测得可用节点，结束该 URL 后续批次检测，url: %s, id: {%s}", hc.name, url, uid)
 			return true
 		}
 		if foundHealthy {
 			anyHealthy = true
 		}
+	}
+	if stopOnFirstHealthy && !anyHealthy {
+		log.Infoln("[%s] 该 URL 全部批次均未测得可用节点，url: %s, id: {%s}", hc.name, url, uid)
 	}
 	return anyHealthy
 }
