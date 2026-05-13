@@ -113,7 +113,7 @@ func (doq *dnsOverQUIC) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.M
 	// connection was closed (due to inactivity for example) AND the server
 	// refuses to open a 0-RTT connection.
 	for i := 0; hasConnection && doq.shouldRetry(err) && i < 2; i++ {
-		log.Debugln("re-creating the QUIC connection and retrying due to %v", err)
+		log.Debugln("因 %v 重新创建 QUIC 连接并重试", err)
 
 		// Close the active connection to make sure we'll try to re-connect.
 		doq.closeConnWithError(err)
@@ -358,7 +358,7 @@ func (doq *dnsOverQUIC) closeConnWithError(err error) {
 
 	err = doq.conn.CloseWithError(code, "")
 	if err != nil {
-		log.Errorln("failed to close the conn: %v", err)
+		log.Errorln("关闭连接失败: %v", err)
 	}
 	doq.conn = nil
 }

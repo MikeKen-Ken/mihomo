@@ -105,7 +105,7 @@ func (u *CoreUpdater) Update(currentExePath string, channel string, force bool) 
 	if err != nil {
 		return fmt.Errorf("get latest version: %w", err)
 	}
-	log.Infoln("current version %s, latest version %s", C.Version, latestVersion)
+	log.Infoln("当前版本 %s，最新版本 %s", C.Version, latestVersion)
 
 	if latestVersion == C.Version && !force {
 		// don't change this output, some downstream dependencies on the upgrader's output fields
@@ -114,9 +114,9 @@ func (u *CoreUpdater) Update(currentExePath string, channel string, force bool) 
 
 	defer func() {
 		if err != nil {
-			log.Errorln("updater: failed: %v", err)
+			log.Errorln("更新器失败: %v", err)
 		} else {
-			log.Infoln("updater: finished")
+			log.Infoln("更新器已完成")
 		}
 	}()
 
@@ -129,7 +129,7 @@ func (u *CoreUpdater) Update(currentExePath string, channel string, force bool) 
 		packageName = packageName + ".gz"
 	}
 	packageURL := baseURL + packageName
-	log.Infoln("updater: updating using url: %s", packageURL)
+	log.Infoln("更新器正在使用 URL 下载: %s", packageURL)
 
 	workDir := filepath.Dir(currentExePath)
 	backupDir := filepath.Join(workDir, "meta-backup")
@@ -141,7 +141,7 @@ func (u *CoreUpdater) Update(currentExePath string, channel string, force bool) 
 	if runtime.GOOS == "windows" {
 		updateExeName = updateExeName + ".exe"
 	}
-	log.Infoln("updateExeName: %s", updateExeName)
+	log.Infoln("更新可执行文件名: %s", updateExeName)
 	updateExePath := filepath.Join(updateDir, updateExeName)
 	backupExePath := filepath.Join(backupDir, filepath.Base(currentExePath))
 
@@ -208,13 +208,13 @@ func (u *CoreUpdater) download(updateDir, packagePath, packageURL string) (err e
 		}
 	}()
 
-	log.Debugln("updateDir %s", updateDir)
+	log.Debugln("更新目录 %s", updateDir)
 	err = os.Mkdir(updateDir, 0o755)
 	if err != nil {
 		return fmt.Errorf("mkdir error: %w", err)
 	}
 
-	log.Debugln("updater: saving package to file %s", packagePath)
+	log.Debugln("更新器: 正在保存安装包到 %s", packagePath)
 	// Create the output file
 	wc, err := os.OpenFile(packagePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil {
@@ -228,7 +228,7 @@ func (u *CoreUpdater) download(updateDir, packagePath, packageURL string) (err e
 		}
 	}()
 
-	log.Debugln("updater: reading http body")
+	log.Debugln("更新器: 正在读取 HTTP 响应体")
 	// This use of io.Copy is now safe, because we limited body's Reader.
 	n, err := io.Copy(wc, io.LimitReader(resp.Body, MaxPackageFileSize))
 	if err != nil {
@@ -240,14 +240,14 @@ func (u *CoreUpdater) download(updateDir, packagePath, packageURL string) (err e
 		// but we should not consider this too rare situation.
 		return fmt.Errorf("attempted to read more than %d bytes", MaxPackageFileSize)
 	}
-	log.Debugln("updater: downloaded package to file %s", packagePath)
+	log.Debugln("更新器: 安装包已下载到 %s", packagePath)
 
 	return nil
 }
 
 // unpack extracts the files from the downloaded archive.
 func (u *CoreUpdater) unpack(updateDir, packagePath string, fileMode os.FileMode) error {
-	log.Infoln("updater: unpacking package")
+	log.Infoln("更新器: 正在解压安装包")
 	if strings.HasSuffix(packagePath, ".zip") {
 		_, err := u.zipFileUnpack(packagePath, updateDir, fileMode)
 		if err != nil {
@@ -269,7 +269,7 @@ func (u *CoreUpdater) unpack(updateDir, packagePath string, fileMode os.FileMode
 
 // backup creates a backup of the current executable file.
 func (u *CoreUpdater) backup(currentExePath, backupExePath, backupDir string) (err error) {
-	log.Infoln("updater: backing up current ExecFile:%s to %s", currentExePath, backupExePath)
+	log.Infoln("更新器: 正在备份当前可执行文件 %s 到 %s", currentExePath, backupExePath)
 	_ = os.Mkdir(backupDir, 0o755)
 
 	// On Windows, since the running executable cannot be overwritten or deleted, it uses os.Rename to move the file to the backup path.
@@ -465,10 +465,10 @@ func (u *CoreUpdater) copyFile(src, dst string) (err error) {
 	if runtime.GOOS == "darwin" {
 		err = exec.Command("/usr/bin/codesign", "--sign", "-", dst).Run()
 		if err != nil {
-			log.Warnln("codesign failed: %v", err)
+			log.Warnln("代码签名失败: %v", err)
 		}
 	}
 
-	log.Infoln("updater: copy: %s to %s", src, dst)
+	log.Infoln("更新器: 复制 %s 到 %s", src, dst)
 	return nil
 }

@@ -21,7 +21,7 @@ func tunNew(options tun.Options) (tunIf tun.Tun, err error) {
 		if timeEnd.Sub(timeBegin) < 1*time.Second { // retrying for "Cannot create a file when that file already exists."
 			return
 		}
-		log.Warnln("Start Tun interface timeout: %s [retrying %d/%d]", err, i+1, maxRetry)
+		log.Warnln("启动 Tun 接口超时: %s [重试 %d/%d]", err, i+1, maxRetry)
 	}
 	return
 }

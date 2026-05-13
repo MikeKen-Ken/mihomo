@@ -404,11 +404,11 @@ func NewClient(clientOption *ClientOption, udp bool, dialFn types.DialFunc) *Cli
 	}
 	c := &Client{ci}
 	runtime.SetFinalizer(c, closeClient)
-	log.Debugln("New TuicV4 Client at %p", c)
+	log.Debugln("新建 TuicV4 客户端 %p", c)
 	return c
 }
 
 func closeClient(client *Client) {
-	log.Debugln("Close TuicV4 Client at %p", client)
+	log.Debugln("关闭 TuicV4 客户端 %p", client)
 	client.forceClose()
 }

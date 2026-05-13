@@ -53,7 +53,7 @@ func (g GeoIPCache) Unmarshal(filename, code string) (*router.GeoIP, error) {
 
 	case errFailedToReadBytes, errFailedToReadExpectedLenBytes,
 		errInvalidGeodataFile, errInvalidGeodataVarintLength:
-		log.Warnln("failed to decode geoip file: %s%s", filename, ", fallback to the original ReadFile method")
+		log.Warnln("解码 GeoIP 文件失败: %s%s", filename, "，回退为原始 ReadFile 方式")
 		geoipBytes, err = os.ReadFile(asset)
 		if err != nil {
 			return nil, err
@@ -118,7 +118,7 @@ func (g GeoSiteCache) Unmarshal(filename, code string) (*router.GeoSite, error) 
 
 	case errFailedToReadBytes, errFailedToReadExpectedLenBytes,
 		errInvalidGeodataFile, errInvalidGeodataVarintLength:
-		log.Warnln("failed to decode geosite file: %s%s", filename, ", fallback to the original ReadFile method")
+		log.Warnln("解码 Geosite 文件失败: %s%s", filename, "，回退为原始 ReadFile 方式")
 		geositeBytes, err = os.ReadFile(asset)
 		if err != nil {
 			return nil, err

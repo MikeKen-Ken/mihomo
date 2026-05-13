@@ -62,7 +62,7 @@ func (a *authAES128) initUserData() {
 			binary.LittleEndian.PutUint32(a.userID[:], uint32(userID))
 			a.userKey = a.hashDigest([]byte(params[1]))
 		} else {
-			log.Warnln("Wrong protocol-param for %s, only digits are expected before ':'", a.salt)
+			log.Warnln("%s 的 protocol-param 错误，冒号前仅应为数字", a.salt)
 		}
 	}
 	if len(a.userKey) == 0 {

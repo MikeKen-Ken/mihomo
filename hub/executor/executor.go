@@ -92,7 +92,7 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	ca.ResetCertificate()
 	for _, c := range cfg.TLS.CustomTrustCert {
 		if err := ca.AddCertificate(c); err != nil {
-			log.Warnln("%s\nadd error: %s", c, err.Error())
+			log.Warnln("%s\n添加失败: %s", c, err.Error())
 		}
 	}
 
@@ -319,20 +319,20 @@ func loadProvider[T P.Provider](providers map[string]T) {
 	load := func(pv T) {
 		name := pv.Name()
 		if pv.VehicleType() == P.Compatible {
-			log.Infoln("Start initial compatible provider %s", name)
+			log.Infoln("启动初始兼容提供者 %s", name)
 		} else {
-			log.Infoln("Start initial provider %s", name)
+			log.Infoln("启动初始提供者 %s", name)
 		}
 
 		if err := pv.Initial(); err != nil {
 			switch pv.Type() {
 			case P.Proxy:
 				{
-					log.Errorln("initial proxy provider %s error: %v", name, err)
+					log.Errorln("初始化代理提供者 %s 出错: %v", name, err)
 				}
 			case P.Rule:
 				{
-					log.Errorln("initial rule provider %s error: %v", name, err)
+					log.Errorln("初始化规则提供者 %s 出错: %v", name, err)
 				}
 			}
 		}
@@ -355,15 +355,15 @@ func loadProvider[T P.Provider](providers map[string]T) {
 func updateSniffer(snifferConfig *sniffer.Config) {
 	dispatcher, err := sniffer.NewDispatcher(snifferConfig)
 	if err != nil {
-		log.Warnln("initial sniffer failed, err:%v", err)
+		log.Warnln("初始化嗅探器失败，错误: %v", err)
 	}
 
 	tunnel.UpdateSniffer(dispatcher)
 
 	if snifferConfig.Enable {
-		log.Infoln("Sniffer is loaded and working")
+		log.Infoln("嗅探器已加载并运行")
 	} else {
-		log.Infoln("Sniffer is closed")
+		log.Infoln("嗅探器已关闭")
 	}
 }
 
@@ -397,7 +397,7 @@ func updateGeneral(general *config.General, logging bool) {
 
 	dialer.SetTcpConcurrent(general.TCPConcurrent)
 	if logging && general.TCPConcurrent {
-		log.Infoln("Use tcp concurrent")
+		log.Infoln("已启用 TCP 并发连接")
 	}
 
 	inbound.SetTfo(general.InboundTfo)
@@ -413,7 +413,7 @@ func updateGeneral(general *config.General, logging bool) {
 	dialer.DefaultInterface.Store(general.Interface)
 	dialer.DefaultRoutingMark.Store(int32(general.RoutingMark))
 	if logging && general.RoutingMark > 0 {
-		log.Infoln("Use routing mark: %#x", general.RoutingMark)
+		log.Infoln("使用路由标记: %#x", general.RoutingMark)
 	}
 
 	iface.FlushCache()
@@ -429,7 +429,7 @@ func updateGeneral(general *config.General, logging bool) {
 	resource.SetETag(general.ETagSupport)
 
 	if general.GlobalClientFingerprint != "" {
-		log.Warnln("The `global-client-fingerprint` configuration is deprecated, please set `client-fingerprint` directly on the proxy instead")
+		log.Warnln("`global-client-fingerprint` 已弃用，请在各代理上直接设置 `client-fingerprint`")
 	}
 	tlsC.SetGlobalFingerprint(general.GlobalClientFingerprint)
 }
@@ -438,7 +438,7 @@ func updateUsers(users []auth.AuthUser) {
 	authenticator := auth.NewAuthenticator(users)
 	authStore.Default.SetAuthenticator(authenticator)
 	if authenticator != nil {
-		log.Infoln("Authentication of local server updated")
+		log.Infoln("本地入站认证信息已更新")
 	}
 }
 
@@ -483,7 +483,7 @@ func updateIPTables(cfg *config.Config) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("[IPTABLES] setting iptables failed: %s", err.Error())
+			log.Errorln("[IPTABLES] 设置 iptables 失败: %s", err.Error())
 			os.Exit(2)
 		}
 	}()
@@ -532,7 +532,7 @@ func updateIPTables(cfg *config.Config) {
 		return
 	}
 
-	log.Infoln("[IPTABLES] Setting iptables completed")
+	log.Infoln("[IPTABLES] iptables 设置完成")
 }
 
 func Shutdown() {
@@ -540,5 +540,5 @@ func Shutdown() {
 	tproxy.CleanupTProxyIPTables()
 	resolver.StoreFakePoolState()
 
-	log.Warnln("Mihomo shutting down")
+	log.Warnln("Mihomo 正在关闭")
 }

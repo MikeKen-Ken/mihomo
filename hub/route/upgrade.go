@@ -24,7 +24,7 @@ func upgradeRouter() http.Handler {
 
 func upgradeCore(w http.ResponseWriter, r *http.Request) {
 	// modify from https://github.com/AdguardTeam/AdGuardHome/blob/595484e0b3fb4c457f9bb727a6b94faa78a66c5f/internal/home/controlupdate.go#L108
-	log.Infoln("start update")
+	log.Infoln("开始更新")
 	execPath, err := os.Executable()
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)

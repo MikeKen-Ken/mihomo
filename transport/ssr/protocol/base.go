@@ -66,7 +66,7 @@ func (a *authData) putEncryptedData(b *bytes.Buffer, userKey []byte, paddings [2
 	cipherKey := core.Kdf(base64.StdEncoding.EncodeToString(userKey)+salt, 16)
 	block, err := aes.NewCipher(cipherKey)
 	if err != nil {
-		log.Warnln("New cipher error: %s", err.Error())
+		log.Warnln("新建密码学套件失败: %s", err.Error())
 		return err
 	}
 	iv := bytes.Repeat([]byte{0}, 16)

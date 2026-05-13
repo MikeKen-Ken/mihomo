@@ -149,7 +149,7 @@ func (v *Vless) Listen(tunnel C.Tunnel) error {
 	if err != nil {
 		return err
 	}
-	log.Infoln("Vless[%s] proxy listening at: %s", v.Name(), v.Address())
+	log.Infoln("Vless[%s] 代理监听地址: %s", v.Name(), v.Address())
 	return nil
 }
 

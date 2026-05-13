@@ -35,7 +35,7 @@ func (c *CacheFile) SetETagWithHash(url string, etagWithHash EtagWithHash) {
 		return bucket.Put([]byte(url), data)
 	})
 	if err != nil {
-		log.Warnln("[CacheFile] write cache to %s failed: %s", c.DB.Path(), err.Error())
+		log.Warnln("[CacheFile] 写入缓存到 %s 失败: %s", c.DB.Path(), err.Error())
 		return
 	}
 }

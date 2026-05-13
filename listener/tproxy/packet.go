@@ -78,7 +78,7 @@ func createOrGetLocalConn(rAddr, lAddr net.Addr, tunnel C.Tunnel) (*net.UDPConn,
 			}()
 			conn, err := listenLocalConn(rAddr, lAddr, tunnel)
 			if err != nil {
-				log.Errorln("listenLocalConn failed with error: %s, packet loss (rAddr[%T]=%s lAddr[%T]=%s)", err.Error(), rAddr, remote, lAddr, local)
+				log.Errorln("listenLocalConn 失败: %s，可能丢包 (rAddr[%T]=%s lAddr[%T]=%s)", err.Error(), rAddr, remote, lAddr, local)
 				return nil, err
 			}
 			natTable.AddForLocalConn(local, remote, conn)
@@ -100,13 +100,13 @@ func listenLocalConn(rAddr, lAddr net.Addr, tunnel C.Tunnel) (*net.UDPConn, erro
 		return nil, err
 	}
 	go func() {
-		log.Debugln("TProxy listenLocalConn rAddr=%s lAddr=%s", rAddr.String(), lAddr.String())
+		log.Debugln("TProxy 本地连接监听 rAddr=%s lAddr=%s", rAddr.String(), lAddr.String())
 		for {
 			buf := pool.Get(pool.UDPBufferSize)
 			br, err := lc.Read(buf)
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
-					log.Debugln("TProxy local conn listener exit.. rAddr=%s lAddr=%s", rAddr.String(), lAddr.String())
+					log.Debugln("TProxy 本地连接监听退出 rAddr=%s lAddr=%s", rAddr.String(), lAddr.String())
 					pool.Put(buf)
 					return
 				}

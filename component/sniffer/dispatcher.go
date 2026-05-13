@@ -78,7 +78,7 @@ func (sd *Dispatcher) UDPSniff(packet C.PacketAdapter, packetSender C.PacketSend
 						if sd.domainCanReplace(host) {
 							replaceDomain(metadata, host, overrideDest)
 						} else {
-							log.Debugln("[Sniffer] Skip sni[%s]", host)
+							log.Debugln("[嗅探] 跳过 SNI[%s]", host)
 						}
 					}
 
@@ -124,7 +124,7 @@ func (sd *Dispatcher) TCPSniff(conn *N.BufferedConn, metadata *C.Metadata) bool 
 		dst := metadata.AddrPort()
 		if !forceSniffer {
 			if count, ok := sd.skipList.Get(dst); ok && count > 5 {
-				log.Debugln("[Sniffer] Skip sniffing[%s] due to multiple failures", dst)
+				log.Debugln("[嗅探] 因多次失败跳过嗅探[%s]", dst)
 				return false
 			}
 		}
@@ -134,12 +134,12 @@ func (sd *Dispatcher) TCPSniff(conn *N.BufferedConn, metadata *C.Metadata) bool 
 			if !forceSniffer {
 				sd.cacheSniffFailed(metadata)
 			}
-			log.Debugln("[Sniffer] All sniffing sniff failed with from [%s:%d] to [%s:%d]", metadata.SrcIP, metadata.SrcPort, metadata.String(), metadata.DstPort)
+			log.Debugln("[嗅探] 全部嗅探失败，从 [%s:%d] 到 [%s:%d]", metadata.SrcIP, metadata.SrcPort, metadata.String(), metadata.DstPort)
 			return false
 		}
 
 		if !sd.domainCanReplace(host) {
-			log.Debugln("[Sniffer] Skip sni[%s]", host)
+			log.Debugln("[嗅探] 跳过 SNI[%s]", host)
 			return false
 		}
 
@@ -154,7 +154,7 @@ func (sd *Dispatcher) TCPSniff(conn *N.BufferedConn, metadata *C.Metadata) bool 
 func replaceDomain(metadata *C.Metadata, host string, overrideDest bool) {
 	metadata.SniffHost = host
 	if overrideDest {
-		log.Debugln("[Sniffer] Sniff %s [%s]-->[%s] success, replace domain [%s]-->[%s]",
+		log.Debugln("[嗅探] 嗅探 %s [%s]-->[%s] 成功，替换域名 [%s]-->[%s]",
 			metadata.NetWork,
 			metadata.SourceDetail(),
 			metadata.RemoteAddress(),
@@ -195,7 +195,7 @@ func (sd *Dispatcher) sniffDomain(conn *N.BufferedConn, metadata *C.Metadata) (s
 				_, ok := err.(*net.OpError)
 				if ok {
 					sd.cacheSniffFailed(metadata)
-					log.Errorln("[Sniffer] [%s] [%s] may not have any sent data, Consider adding skip", metadata.DstIP, s.Protocol())
+					log.Errorln("[嗅探] [%s] [%s] 可能尚未发送数据，可考虑加入 skip", metadata.DstIP, s.Protocol())
 					_ = conn.Close()
 				}
 
@@ -205,7 +205,7 @@ func (sd *Dispatcher) sniffDomain(conn *N.BufferedConn, metadata *C.Metadata) (s
 			bufferedLen := conn.Buffered()
 			bytes, err := conn.Peek(bufferedLen)
 			if err != nil {
-				log.Debugln("[Sniffer] [%s] [%s] the data length not enough, error: %v", metadata.DstIP, s.Protocol(), err)
+				log.Debugln("[嗅探] [%s] [%s] 数据长度不足，错误: %v", metadata.DstIP, s.Protocol(), err)
 				continue
 			}
 
@@ -218,7 +218,7 @@ func (sd *Dispatcher) sniffDomain(conn *N.BufferedConn, metadata *C.Metadata) (s
 				_ = conn.SetReadDeadline(time.Time{})
 				//log.Debugln("[Sniffer] [%s] [%s] try again, got length: %d", metadata.DstIP, s.Protocol(), len(bytes))
 				if err != nil {
-					log.Debugln("[Sniffer] [%s] [%s] the data length not enough, error: %v", metadata.DstIP, s.Protocol(), err)
+					log.Debugln("[嗅探] [%s] [%s] 数据长度不足，错误: %v", metadata.DstIP, s.Protocol(), err)
 					continue
 				}
 				host, err = s.SniffData(bytes)
@@ -279,7 +279,7 @@ func NewDispatcher(snifferConfig *Config) (*Dispatcher, error) {
 	for snifferName, config := range snifferConfig.Sniffers {
 		s, err := NewSniffer(snifferName, config)
 		if err != nil {
-			log.Errorln("Sniffer name[%s] is error", snifferName)
+			log.Errorln("嗅探器名称[%s] 无效", snifferName)
 			return &Dispatcher{enable: false}, err
 		}
 		dispatcher.sniffers[s] = config

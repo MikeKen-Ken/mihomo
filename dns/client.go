@@ -62,7 +62,7 @@ func (c *client) ExchangeContext(ctx context.Context, m *D.Msg) (*D.Msg, error) 
 		// Resolvers MUST resend queries over TCP if they receive a truncated UDP response (with TC=1 set)!
 		if msg != nil && msg.Truncated && network == "udp" {
 			network = "tcp"
-			log.Debugln("[DNS] Truncated reply from %s:%s for %s over UDP, retrying over TCP", c.host, c.port, m.Question[0].String())
+			log.Debugln("[DNS] UDP 响应被截断，来自 %s:%s，查询 %s，改用 TCP 重试", c.host, c.port, m.Question[0].String())
 			var tcpConn net.Conn
 			tcpConn, err = c.dialer.DialContext(ctx, network, addr)
 			if err != nil {

@@ -24,7 +24,7 @@ func NewUDP(addr string, pickCipher core.Cipher, tunnel C.Tunnel, additions ...i
 	}
 
 	if err := sockopt.UDPReuseaddr(l); err != nil {
-		log.Warnln("Failed to Reuse UDP Address: %s", err)
+		log.Warnln("复用 UDP 地址失败: %s", err)
 	}
 
 	sl := &UDPListener{l, false}

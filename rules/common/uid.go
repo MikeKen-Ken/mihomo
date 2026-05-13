@@ -50,7 +50,7 @@ func (u *Uid) Match(metadata *C.Metadata, helper C.RuleMatchHelper) (bool, strin
 			return true, u.adapter
 		}
 	}
-	log.Warnln("[UID] could not get uid from %s", metadata.String())
+	log.Warnln("[UID] 无法从 %s 获取 UID", metadata.String())
 	return false, ""
 }
 

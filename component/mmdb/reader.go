@@ -83,7 +83,7 @@ func (r ASNReader) LookupASN(ip net.IP) (string, string) {
 		_ = r.Lookup(ip, &result)
 		return result.ASN[2:], result.Name
 	default:
-		log.Warnln("Unsupported ASN type: %s", r.Metadata.DatabaseType)
+		log.Warnln("不支持的 ASN 类型: %s", r.Metadata.DatabaseType)
 	}
 	return "", ""
 }

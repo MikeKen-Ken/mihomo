@@ -117,7 +117,7 @@ func CleanupTProxyIPTables() {
 		return
 	}
 
-	log.Warnln("Cleanup tproxy linux iptables")
+	log.Warnln("正在清理 Linux tproxy iptables 规则")
 
 	dialer.DefaultRoutingMark.CompareAndSwap(2158, 0)
 
@@ -203,6 +203,6 @@ func execCmd(cmdStr string) {
 
 	_, err := cmd.ExecCmd(cmdStr)
 	if err != nil {
-		log.Warnln("[IPTABLES] exec cmd: %v", err)
+		log.Warnln("[IPTABLES] 执行命令失败: %v", err)
 	}
 }

@@ -29,7 +29,7 @@ func LookupIP4P(addr netip.Addr, port string) (netip.Addr, string) {
 			ip[2] == 0x00 && ip[3] == 0x00 {
 			addr = netip.AddrFrom4([4]byte{ip[12], ip[13], ip[14], ip[15]})
 			port = strconv.Itoa(int(ip[10])<<8 + int(ip[11]))
-			log.Debugln("Convert IP4P address %s to %s", ip, net.JoinHostPort(addr.String(), port))
+			log.Debugln("将 IP4P 地址 %s 转换为 %s", ip, net.JoinHostPort(addr.String(), port))
 			return addr, port
 		}
 	}

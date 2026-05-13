@@ -116,7 +116,7 @@ func CalculateInterfaceName(name string) (tunName string) {
 func checkTunName(tunName string) (ok bool) {
 	defer func() {
 		if !ok {
-			log.Warnln("[TUN] Unsupported tunName(%s) in %s, force regenerate by ourselves.", tunName, runtime.GOOS)
+			log.Warnln("[TUN] 不支持的 tunName(%s)（系统 %s），将强制自行生成", tunName, runtime.GOOS)
 		}
 	}()
 	if runtime.GOOS == "darwin" {
@@ -158,9 +158,9 @@ func New(options LC.Tun, tunnel C.Tunnel, additions ...inbound.Addition) (l *Lis
 		if tunnelName, err := getTunnelName(int32(options.FileDescriptor)); err == nil {
 			tunName = tunnelName // sing-tun must have the truth tun interface name even it from a fd
 			//forwarderBindInterface = true
-			log.Debugln("[TUN] use tun name %s for fd %d", tunnelName, options.FileDescriptor)
+			log.Debugln("[TUN] 对 fd %d 使用 tun 名称 %s", options.FileDescriptor, tunnelName)
 		} else {
-			log.Warnln("[TUN] get tun name failed for fd %d, fallback to use tun interface name %s", options.FileDescriptor, tunName)
+			log.Warnln("[TUN] 无法从 fd %d 获取 tun 名称，回退使用接口名 %s", options.FileDescriptor, tunName)
 		}
 	}
 	routeAddress := options.RouteAddress
@@ -353,9 +353,9 @@ func New(options LC.Tun, tunnel C.Tunnel, additions ...inbound.Addition) (l *Lis
 		l.defaultInterfaceMonitor = defaultInterfaceMonitor
 		defaultInterfaceMonitor.RegisterCallback(func(defaultInterface *control.Interface, event int) {
 			if defaultInterface != nil {
-				log.Warnln("[TUN] default interface changed by monitor, => %s", defaultInterface.Name)
+				log.Warnln("[TUN] 监控检测到默认网卡已变更 => %s", defaultInterface.Name)
 			} else {
-				log.Errorln("[TUN] default interface lost by monitor")
+				log.Errorln("[TUN] 监控检测到默认网卡丢失")
 			}
 			iface.FlushCache()
 			resolver.ResetConnection() // reset resolver's connection after default interface changed
@@ -614,15 +614,15 @@ func (d *cDialerInterfaceFinder) FindInterfaceName(destination netip.Addr) strin
 	for _, dest := range []netip.Addr{destination, netip.IPv4Unspecified(), netip.IPv6Unspecified()} {
 		autoDetectInterfaceName := d.DefaultInterfaceName(dest)
 		if autoDetectInterfaceName == d.tunName {
-			log.Warnln("[TUN] Auto detect interface for %s get same name with tun", destination.String())
+			log.Warnln("[TUN] 为 %s 自动检测网卡与 tun 同名", destination.String())
 		} else if autoDetectInterfaceName == "" || autoDetectInterfaceName == "<nil>" {
-			log.Warnln("[TUN] Auto detect interface for %s get empty name.", destination.String())
+			log.Warnln("[TUN] 为 %s 自动检测网卡得到空名称", destination.String())
 		} else {
-			log.Debugln("[TUN] Auto detect interface for %s --> %s", destination, autoDetectInterfaceName)
+			log.Debugln("[TUN] 为 %s 自动检测网卡 --> %s", destination, autoDetectInterfaceName)
 			return autoDetectInterfaceName
 		}
 	}
-	log.Warnln("[TUN] Auto detect interface for %s failed, return '<invalid>' to avoid lookback", destination)
+	log.Warnln("[TUN] 为 %s 自动检测网卡失败，返回 '<invalid>' 以避免环回", destination)
 	return "<invalid>"
 }
 

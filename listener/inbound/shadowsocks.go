@@ -74,7 +74,7 @@ func (s *ShadowSocks) Listen(tunnel C.Tunnel) error {
 	if err != nil {
 		return err
 	}
-	log.Infoln("ShadowSocks[%s] proxy listening at: %s", s.Name(), s.Address())
+	log.Infoln("ShadowSocks[%s] 代理监听地址: %s", s.Name(), s.Address())
 	return nil
 }
 

@@ -383,10 +383,10 @@ func checkLanDeviceLimit(sourceIP netip.Addr) bool {
 
 func logLanDeviceOverLimit(metadata *C.Metadata) {
 	if syncatomic.LoadInt32(&lanOverLimitAction) == 1 {
-		log.Warnln("[LAN Device Limit] drop over-limit device source=%s limit=%d", metadata.SourceAddress(), LanMaxDevices())
+		log.Warnln("[局域网设备限制] 丢弃超限设备 source=%s limit=%d", metadata.SourceAddress(), LanMaxDevices())
 		return
 	}
-	log.Warnln("[LAN Device Limit] reject over-limit device source=%s limit=%d", metadata.SourceAddress(), LanMaxDevices())
+	log.Warnln("[局域网设备限制] 拒绝超限设备 source=%s limit=%d", metadata.SourceAddress(), LanMaxDevices())
 }
 
 func isHandle(t C.Type) bool {
@@ -462,7 +462,7 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 				defer cancel()
 				ip, err := resolver.ResolveIP(ctx, metadata.Host)
 				if err != nil {
-					log.Debugln("[DNS] resolve %s error: %s", metadata.Host, err.Error())
+					log.Debugln("[DNS] 解析 %s 失败: %s", metadata.Host, err.Error())
 				} else {
 					log.Debugln("[DNS] %s --> %s", metadata.Host, ip.String())
 					metadata.DstIP = ip
@@ -477,7 +477,7 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 					// normal check for process
 					uid, path, err := process.FindProcessName(metadata.NetWork.String(), metadata.SrcIP, int(metadata.SrcPort))
 					if err != nil {
-						log.Debugln("[Process] find process error for %s: %v", metadata.String(), err)
+						log.Debugln("[进程] 查找进程失败 %s: %v", metadata.String(), err)
 					} else {
 						metadata.Process = filepath.Base(path)
 						metadata.ProcessPath = path
@@ -491,7 +491,7 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 					// check package names
 					pkg, err := process.FindPackageName(metadata)
 					if err != nil {
-						log.Debugln("[Process] find process error for %s: %v", metadata.String(), err)
+						log.Debugln("[进程] 查找进程失败 %s: %v", metadata.String(), err)
 					} else {
 						metadata.Process = pkg
 					}
@@ -557,14 +557,14 @@ func handleUDPConn(packet C.PacketAdapter) {
 	metadata := packet.Metadata()
 	if !metadata.Valid() {
 		packet.Drop()
-		log.Warnln("[Metadata] not valid: %#v", metadata)
+		log.Warnln("[元数据] 无效: %#v", metadata)
 		return
 	}
 	fixMetadata(metadata) // fix some metadata not set via metadata.SetRemoteAddr or metadata.SetRemoteAddress
 
 	if err := preHandleMetadata(metadata.Clone()); err != nil { // precheck without modify metadata
 		packet.Drop()
-		log.Debugln("[Metadata PreHandle] error: %s", err)
+		log.Debugln("[元数据预处理] 错误: %s", err)
 		return
 	}
 	key := packet.Key()
@@ -590,7 +590,7 @@ func handleUDPConn(packet C.PacketAdapter) {
 			metadata = metadata.Clone() // don't modify PacketAdapter's metadata
 
 			if err := sender.DoSniff(metadata); err != nil {
-				log.Warnln("[UDP] DoSniff error: %s", err.Error())
+				log.Warnln("[UDP] 嗅探失败: %s", err.Error())
 				return nil, nil, err
 			}
 
@@ -598,7 +598,7 @@ func handleUDPConn(packet C.PacketAdapter) {
 
 			proxy, rule, err := resolveMetadata(metadata)
 			if err != nil {
-				log.Warnln("[UDP] Parse metadata failed: %s", err.Error())
+				log.Warnln("[UDP] 解析元数据失败: %s", err.Error())
 				return nil, nil, err
 			}
 			countProxyRequest(proxy, metadata)
@@ -651,14 +651,14 @@ func handleTCPConn(connCtx C.ConnContext) {
 
 	metadata := connCtx.Metadata()
 	if !metadata.Valid() {
-		log.Warnln("[Metadata] not valid: %#v", metadata)
+		log.Warnln("[元数据] 无效: %#v", metadata)
 		return
 	}
 	fixMetadata(metadata) // fix some metadata not set via metadata.SetRemoteAddr or metadata.SetRemoteAddress
 
 	preHandleFailed := false
 	if err := preHandleMetadata(metadata); err != nil {
-		log.Debugln("[Metadata PreHandle] error: %s", err)
+		log.Debugln("[元数据预处理] 错误: %s", err)
 		preHandleFailed = true
 	}
 
@@ -675,7 +675,7 @@ func handleTCPConn(connCtx C.ConnContext) {
 
 	// If both trials have failed, we can do nothing but give up
 	if preHandleFailed {
-		log.Debugln("[Metadata PreHandle] failed to sniff a domain for connection %s --> %s, give up",
+		log.Debugln("[元数据预处理] 无法为连接嗅探到域名 %s --> %s，放弃",
 			metadata.SourceDetail(), metadata.RemoteAddress())
 		return
 	}
@@ -697,7 +697,7 @@ func handleTCPConn(connCtx C.ConnContext) {
 
 	proxy, rule, err := resolveMetadata(metadata)
 	if err != nil {
-		log.Warnln("[Metadata] parse failed: %s", err.Error())
+		log.Warnln("[元数据] 解析失败: %s", err.Error())
 		return
 	}
 	countProxyRequest(proxy, metadata)
@@ -775,10 +775,10 @@ func logMetadataErr(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err
 		return
 	}
 	if rule == nil {
-		log.Warnln("[%s] dial %s %s --> %s error: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
+		log.Warnln("[%s] 拨号 %s %s --> %s 错误: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
 	} else {
 		ruleInfo := formatRuleInfo(rule, metadata)
-		log.Warnln("[%s] dial %s (match %s) %s --> %s error: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), ruleInfo, metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
+		log.Warnln("[%s] 拨号 %s (匹配 %s) %s --> %s 错误: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), ruleInfo, metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
 	}
 }
 
@@ -789,16 +789,16 @@ func logMetadata(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
 	}
 	switch {
 	case metadata.SpecialProxy != "":
-		log.Infoln("[%s] %s --> %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
+		log.Infoln("[%s] %s --> %s 使用 %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
 	case rule != nil:
 		ruleInfo := formatRuleInfo(rule, metadata)
-		log.Infoln("[%s] %s --> %s match %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), ruleInfo, remoteConn.Chains().String())
+		log.Infoln("[%s] %s --> %s 匹配 %s 使用 %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), ruleInfo, remoteConn.Chains().String())
 	case mode == Global:
-		log.Infoln("[%s] %s --> %s using GLOBAL", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
+		log.Infoln("[%s] %s --> %s 使用 GLOBAL", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
 	case mode == Direct:
-		log.Infoln("[%s] %s --> %s using DIRECT", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
+		log.Infoln("[%s] %s --> %s 使用 DIRECT", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
 	default:
-		log.Infoln("[%s] %s --> %s doesn't match any rule using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
+		log.Infoln("[%s] %s --> %s 未匹配任何规则，使用 %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
 	}
 }
 
@@ -849,13 +849,13 @@ func logMetadataCMFA(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection)
 		log.Infoln("[%s] %s%s --> %s --> %s%s --> %s",
 			network, sourceAddr, processPart, remoteAddr, ruleType, ruleDetailPart, chains)
 	case mode == Global:
-		log.Infoln("[%s] %s%s --> %s --> GLOBAL --> %s",
+		log.Infoln("[%s] %s%s --> %s --> 全局 --> %s",
 			network, sourceAddr, processPart, remoteAddr, chains)
 	case mode == Direct:
-		log.Infoln("[%s] %s%s --> %s --> DIRECT --> %s",
+		log.Infoln("[%s] %s%s --> %s --> 直连 --> %s",
 			network, sourceAddr, processPart, remoteAddr, chains)
 	default:
-		log.Infoln("[%s] %s%s --> %s --> NO MATCH --> %s",
+		log.Infoln("[%s] %s%s --> %s --> 无匹配 --> %s",
 			network, sourceAddr, processPart, remoteAddr, chains)
 	}
 }
@@ -874,7 +874,7 @@ func logMetadataErrCMFA(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter,
 	}
 
 	if rule == nil {
-		log.Warnln("[%s] %s%s --> %s --> %s --> ERROR: %s",
+		log.Warnln("[%s] %s%s --> %s --> %s --> 错误: %s",
 			network, sourceAddr, processPart, remoteAddr, proxy.Name(), errMsg)
 	} else {
 		ruleType, ruleDetail := formatRuleInfoCMFA(rule, metadata)
@@ -882,7 +882,7 @@ func logMetadataErrCMFA(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter,
 		if ruleDetail != "" {
 			ruleDetailPart = fmt.Sprintf(" --> %s", ruleDetail)
 		}
-		log.Warnln("[%s] %s%s --> %s --> %s%s --> %s --> ERROR: %s",
+		log.Warnln("[%s] %s%s --> %s --> %s%s --> %s --> 错误: %s",
 			network, sourceAddr, processPart, remoteAddr, ruleType, ruleDetailPart, proxy.Name(), errMsg)
 	}
 }
@@ -922,12 +922,12 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
 				}
 			}
 			if passed {
-				log.Debugln("%s match Pass rule", adapter.Name())
+				log.Debugln("%s 匹配 Pass 规则", adapter.Name())
 				continue
 			}
 
 			if metadata.NetWork == C.UDP && !adapter.SupportUDP() {
-				log.Debugln("%s UDP is not supported", adapter.Name())
+				log.Debugln("%s 不支持 UDP", adapter.Name())
 				continue
 			}
 
@@ -940,10 +940,10 @@ func match(metadata *C.Metadata, helper C.RuleMatchHelper) (C.Proxy, C.Rule, err
 
 func getRules(metadata *C.Metadata) []C.Rule {
 	if sr, ok := subRules[metadata.SpecialRules]; ok {
-		log.Debugln("[Rule] use %s rules", metadata.SpecialRules)
+		log.Debugln("[规则] 使用 %s 规则集", metadata.SpecialRules)
 		return sr
 	} else {
-		log.Debugln("[Rule] use default rules")
+		log.Debugln("[规则] 使用默认规则")
 		return rules
 	}
 }

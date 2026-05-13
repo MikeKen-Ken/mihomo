@@ -53,7 +53,7 @@ func (l *Listener) Close() error {
 }
 
 func (l *Listener) handleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbound.Addition) {
-	log.Debugln("[Sudoku] accepted %s", conn.RemoteAddr())
+	log.Debugln("[Sudoku] 已接受连接 %s", conn.RemoteAddr())
 	handshakeConn := conn
 	handshakeCfg := &l.protoConf
 	closeConns := func() {
@@ -97,7 +97,7 @@ func (l *Listener) handleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbou
 		var susp *sudoku.SuspiciousError
 		isSuspicious := errors.As(err, &susp) && susp != nil && susp.Conn != nil
 		if isSuspicious {
-			log.Warnln("[Sudoku] suspicious handshake from %s: %v", conn.RemoteAddr(), err)
+			log.Warnln("[Sudoku] 可疑握手来自 %s: %v", conn.RemoteAddr(), err)
 			if fallbackAddr != "" {
 				fb, err := inner.HandleTcp(tunnel, fallbackAddr, "")
 				if err == nil {
@@ -106,7 +106,7 @@ func (l *Listener) handleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbou
 				}
 			}
 		} else {
-			log.Debugln("[Sudoku] handshake failed from %s: %v", conn.RemoteAddr(), err)
+			log.Debugln("[Sudoku] 握手失败来自 %s: %v", conn.RemoteAddr(), err)
 		}
 		closeConns()
 		return
@@ -114,7 +114,7 @@ func (l *Listener) handleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbou
 
 	session, err := sudoku.ReadServerSession(cConn, meta)
 	if err != nil {
-		log.Warnln("[Sudoku] read session failed from %s: %v", conn.RemoteAddr(), err)
+		log.Warnln("[Sudoku] 读取会话失败来自 %s: %v", conn.RemoteAddr(), err)
 		_ = cConn.Close()
 		if handshakeConn != conn {
 			_ = conn.Close()
@@ -148,7 +148,7 @@ func (l *Listener) handleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbou
 	default:
 		targetAddr := socks5.ParseAddr(session.Target)
 		if targetAddr == nil {
-			log.Warnln("[Sudoku] invalid target from %s: %q", conn.RemoteAddr(), session.Target)
+			log.Warnln("[Sudoku] 无效目标来自 %s: %q", conn.RemoteAddr(), session.Target)
 			_ = session.Conn.Close()
 			return
 		}
@@ -166,7 +166,7 @@ func (l *Listener) handleUoTSession(conn net.Conn, tunnel C.Tunnel, additions ..
 		addrStr, payload, err := sudoku.ReadDatagram(conn)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				log.Debugln("[Sudoku][UoT] session closed: %v", err)
+				log.Debugln("[Sudoku][UoT] 会话已关闭: %v", err)
 			}
 			_ = conn.Close()
 			return
@@ -174,7 +174,7 @@ func (l *Listener) handleUoTSession(conn net.Conn, tunnel C.Tunnel, additions ..
 
 		target := socks5.ParseAddr(addrStr)
 		if target == nil {
-			log.Debugln("[Sudoku][UoT] drop invalid target: %s", addrStr)
+			log.Debugln("[Sudoku][UoT] 丢弃无效目标: %s", addrStr)
 			continue
 		}
 

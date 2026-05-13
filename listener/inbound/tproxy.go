@@ -70,7 +70,7 @@ func (t *TProxy) Listen(tunnel C.Tunnel) error {
 			t.lUDP = append(t.lUDP, lUDP)
 		}
 	}
-	log.Infoln("TProxy[%s] proxy listening at: %s", t.Name(), t.Address())
+	log.Infoln("TProxy[%s] 代理监听地址: %s", t.Name(), t.Address())
 	return nil
 }
 

@@ -48,7 +48,7 @@ func (c *FakeIpStore) PutByHost(host string, ip netip.Addr) {
 		return bucket.Put([]byte(host), ip.AsSlice())
 	})
 	if err != nil {
-		log.Warnln("[CacheFile] write cache to %s failed: %s", c.DB.Path(), err.Error())
+		log.Warnln("[CacheFile] 写入缓存到 %s 失败: %s", c.DB.Path(), err.Error())
 	}
 }
 
@@ -79,7 +79,7 @@ func (c *FakeIpStore) PutByIP(ip netip.Addr, host string) {
 		return bucket.Put(ip.AsSlice(), []byte(host))
 	})
 	if err != nil {
-		log.Warnln("[CacheFile] write cache to %s failed: %s", c.DB.Path(), err.Error())
+		log.Warnln("[CacheFile] 写入缓存到 %s 失败: %s", c.DB.Path(), err.Error())
 	}
 }
 
@@ -104,7 +104,7 @@ func (c *FakeIpStore) DelByIP(ip netip.Addr) {
 		return err
 	})
 	if err != nil {
-		log.Warnln("[CacheFile] write cache to %s failed: %s", c.DB.Path(), err.Error())
+		log.Warnln("[CacheFile] 写入缓存到 %s 失败: %s", c.DB.Path(), err.Error())
 	}
 }
 

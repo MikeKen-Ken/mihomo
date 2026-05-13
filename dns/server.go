@@ -69,7 +69,7 @@ func ReCreateServer(addr string, service resolver.Service) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("Start DNS server error: %s", err.Error())
+			log.Errorln("启动 DNS 服务失败: %s", err.Error())
 		}
 	}()
 
@@ -84,15 +84,15 @@ func ReCreateServer(addr string, service resolver.Service) {
 	go func() {
 		p, err := inbound.ListenPacket("udp", addr)
 		if err != nil {
-			log.Errorln("Start DNS server(UDP) error: %s", err.Error())
+			log.Errorln("启动 DNS 服务(UDP)失败: %s", err.Error())
 			return
 		}
 
 		if err := sockopt.UDPReuseaddr(p); err != nil {
-			log.Warnln("Failed to Reuse UDP Address: %s", err)
+			log.Warnln("复用 UDP 地址失败: %s", err)
 		}
 
-		log.Infoln("DNS server(UDP) listening at: %s", p.LocalAddr().String())
+		log.Infoln("DNS 服务(UDP)监听地址: %s", p.LocalAddr().String())
 		server.udpServer = &D.Server{Addr: addr, PacketConn: p, Handler: server}
 		_ = server.udpServer.ActivateAndServe()
 	}()
@@ -100,11 +100,11 @@ func ReCreateServer(addr string, service resolver.Service) {
 	go func() {
 		l, err := inbound.Listen("tcp", addr)
 		if err != nil {
-			log.Errorln("Start DNS server(TCP) error: %s", err.Error())
+			log.Errorln("启动 DNS 服务(TCP)失败: %s", err.Error())
 			return
 		}
 
-		log.Infoln("DNS server(TCP) listening at: %s", l.Addr().String())
+		log.Infoln("DNS 服务(TCP)监听地址: %s", l.Addr().String())
 		server.tcpServer = &D.Server{Addr: addr, Listener: l, Handler: server}
 		_ = server.tcpServer.ActivateAndServe()
 	}()

@@ -219,7 +219,7 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			vless := make(map[string]any, 20)
 			err = handleVShareLink(names, urlVLess, scheme, vless)
 			if err != nil {
-				log.Warnln("error:%s line:%s", err.Error(), line)
+				log.Warnln("错误:%s 行:%s", err.Error(), line)
 				continue
 			}
 			if flow := query.Get("flow"); flow != "" {
@@ -244,7 +244,7 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 				vmess := make(map[string]any, 20)
 				err = handleVShareLink(names, urlVMess, scheme, vmess)
 				if err != nil {
-					log.Warnln("error:%s line:%s", err.Error(), line)
+					log.Warnln("错误:%s 行:%s", err.Error(), line)
 					continue
 				}
 				vmess["alterId"] = 0

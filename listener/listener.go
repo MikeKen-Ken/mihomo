@@ -110,7 +110,7 @@ func ReCreateHTTP(port int, tunnel C.Tunnel) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("Start HTTP server error: %s", err.Error())
+			log.Errorln("启动 HTTP 服务失败: %s", err.Error())
 		}
 	}()
 
@@ -130,11 +130,11 @@ func ReCreateHTTP(port int, tunnel C.Tunnel) {
 
 	httpListener, err = http.New(addr, tunnel)
 	if err != nil {
-		log.Errorln("Start HTTP server error: %s", err.Error())
+		log.Errorln("启动 HTTP 服务失败: %s", err.Error())
 		return
 	}
 
-	log.Infoln("HTTP proxy listening at: %s", httpListener.Address())
+	log.Infoln("HTTP 代理监听地址: %s", httpListener.Address())
 }
 
 func ReCreateSocks(port int, tunnel C.Tunnel) {
@@ -144,7 +144,7 @@ func ReCreateSocks(port int, tunnel C.Tunnel) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("Start SOCKS server error: %s", err.Error())
+			log.Errorln("启动 SOCKS 服务失败: %s", err.Error())
 		}
 	}()
 
@@ -193,7 +193,7 @@ func ReCreateSocks(port int, tunnel C.Tunnel) {
 	socksListener = tcpListener
 	socksUDPListener = udpListener
 
-	log.Infoln("SOCKS proxy listening at: %s", socksListener.Address())
+	log.Infoln("SOCKS 代理监听地址: %s", socksListener.Address())
 }
 
 func ReCreateRedir(port int, tunnel C.Tunnel) {
@@ -203,7 +203,7 @@ func ReCreateRedir(port int, tunnel C.Tunnel) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("Start Redir server error: %s", err.Error())
+			log.Errorln("启动 Redir 服务失败: %s", err.Error())
 		}
 	}()
 
@@ -236,10 +236,10 @@ func ReCreateRedir(port int, tunnel C.Tunnel) {
 
 	redirUDPListener, err = tproxy.NewUDP(addr, tunnel)
 	if err != nil {
-		log.Warnln("Failed to start Redir UDP Listener: %s", err)
+		log.Warnln("启动 Redir UDP 监听失败: %s", err)
 	}
 
-	log.Infoln("Redirect proxy listening at: %s", redirListener.Address())
+	log.Infoln("Redirect 代理监听地址: %s", redirListener.Address())
 }
 
 func ReCreateShadowSocks(shadowSocksConfig string, tunnel C.Tunnel) {
@@ -249,7 +249,7 @@ func ReCreateShadowSocks(shadowSocksConfig string, tunnel C.Tunnel) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("Start ShadowSocks server error: %s", err.Error())
+			log.Errorln("启动 Shadowsocks 服务失败: %s", err.Error())
 		}
 	}()
 
@@ -291,7 +291,7 @@ func ReCreateShadowSocks(shadowSocksConfig string, tunnel C.Tunnel) {
 	shadowSocksListener = listener
 
 	for _, addr := range shadowSocksListener.AddrList() {
-		log.Infoln("ShadowSocks proxy listening at: %s", addr.String())
+		log.Infoln("Shadowsocks 代理监听地址: %s", addr.String())
 	}
 	return
 }
@@ -303,7 +303,7 @@ func ReCreateVmess(vmessConfig string, tunnel C.Tunnel) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("Start Vmess server error: %s", err.Error())
+			log.Errorln("启动 Vmess 服务失败: %s", err.Error())
 		}
 	}()
 
@@ -343,7 +343,7 @@ func ReCreateVmess(vmessConfig string, tunnel C.Tunnel) {
 	vmessListener = listener
 
 	for _, addr := range vmessListener.AddrList() {
-		log.Infoln("Vmess proxy listening at: %s", addr.String())
+		log.Infoln("Vmess 代理监听地址: %s", addr.String())
 	}
 	return
 }
@@ -359,7 +359,7 @@ func ReCreateTuic(config LC.TuicServer, tunnel C.Tunnel) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("Start Tuic server error: %s", err.Error())
+			log.Errorln("启动 Tuic 服务失败: %s", err.Error())
 		}
 	}()
 
@@ -388,7 +388,7 @@ func ReCreateTuic(config LC.TuicServer, tunnel C.Tunnel) {
 	tuicListener = listener
 
 	for _, addr := range tuicListener.AddrList() {
-		log.Infoln("Tuic proxy listening at: %s", addr.String())
+		log.Infoln("Tuic 代理监听地址: %s", addr.String())
 	}
 	return
 }
@@ -400,7 +400,7 @@ func ReCreateTProxy(port int, tunnel C.Tunnel) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("Start TProxy server error: %s", err.Error())
+			log.Errorln("启动 TProxy 服务失败: %s", err.Error())
 		}
 	}()
 
@@ -433,10 +433,10 @@ func ReCreateTProxy(port int, tunnel C.Tunnel) {
 
 	tproxyUDPListener, err = tproxy.NewUDP(addr, tunnel)
 	if err != nil {
-		log.Warnln("Failed to start TProxy UDP Listener: %s", err)
+		log.Warnln("启动 TProxy UDP 监听失败: %s", err)
 	}
 
-	log.Infoln("TProxy server listening at: %s", tproxyListener.Address())
+	log.Infoln("TProxy 服务监听地址: %s", tproxyListener.Address())
 }
 
 func ReCreateMixed(port int, tunnel C.Tunnel) {
@@ -446,7 +446,7 @@ func ReCreateMixed(port int, tunnel C.Tunnel) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("Start Mixed(http+socks) server error: %s", err.Error())
+			log.Errorln("启动 Mixed(HTTP+SOCKS) 服务失败: %s", err.Error())
 		}
 	}()
 
@@ -491,7 +491,7 @@ func ReCreateMixed(port int, tunnel C.Tunnel) {
 		return
 	}
 
-	log.Infoln("Mixed(http+socks) proxy listening at: %s", mixedListener.Address())
+	log.Infoln("Mixed(HTTP+SOCKS) 代理监听地址: %s", mixedListener.Address())
 }
 
 func ReCreateTun(tunConf LC.Tun, tunnel C.Tunnel) {
@@ -506,7 +506,7 @@ func ReCreateTun(tunConf LC.Tun, tunnel C.Tunnel) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("Start TUN listening error: %s", err.Error())
+			log.Errorln("启动 TUN 监听失败: %s", err.Error())
 			tunConf.Enable = false
 		}
 	}()
@@ -530,7 +530,7 @@ func ReCreateTun(tunConf LC.Tun, tunnel C.Tunnel) {
 	}
 	tunLister = lister
 
-	log.Infoln("[TUN] Tun adapter listening at: %s", tunLister.Address())
+	log.Infoln("[TUN] Tun 适配器监听地址: %s", tunLister.Address())
 }
 
 func PatchTunnel(tunnels []LC.Tunnel, tunnel C.Tunnel) {
@@ -605,19 +605,19 @@ func PatchTunnel(tunnels []LC.Tunnel, tunnel C.Tunnel) {
 		if elm.network == "tcp" {
 			l, err := LT.New(elm.addr, elm.target, elm.proxy, tunnel)
 			if err != nil {
-				log.Errorln("Start tunnel %s error: %s", elm.target, err.Error())
+				log.Errorln("启动隧道 %s 失败: %s", elm.target, err.Error())
 				continue
 			}
 			tunnelTCPListeners[key] = l
-			log.Infoln("Tunnel(tcp/%s) proxy %s listening at: %s", elm.target, elm.proxy, tunnelTCPListeners[key].Address())
+			log.Infoln("隧道(tcp/%s) 代理 %s 监听地址: %s", elm.target, elm.proxy, tunnelTCPListeners[key].Address())
 		} else {
 			l, err := LT.NewUDP(elm.addr, elm.target, elm.proxy, tunnel)
 			if err != nil {
-				log.Errorln("Start tunnel %s error: %s", elm.target, err.Error())
+				log.Errorln("启动隧道 %s 失败: %s", elm.target, err.Error())
 				continue
 			}
 			tunnelUDPListeners[key] = l
-			log.Infoln("Tunnel(udp/%s) proxy %s listening at: %s", elm.target, elm.proxy, tunnelUDPListeners[key].Address())
+			log.Infoln("隧道(udp/%s) 代理 %s 监听地址: %s", elm.target, elm.proxy, tunnelUDPListeners[key].Address())
 		}
 	}
 }
@@ -635,7 +635,7 @@ func PatchInboundListeners(newListenerMap map[string]C.InboundListener, tunnel C
 			}
 		}
 		if err := newListener.Listen(tunnel); err != nil {
-			log.Errorln("Listener %s listen err: %s", name, err.Error())
+			log.Errorln("入站 %s 监听失败: %s", name, err.Error())
 			continue
 		}
 		inboundListeners[name] = newListener

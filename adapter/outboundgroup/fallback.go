@@ -85,10 +85,10 @@ func (f *Fallback) healthCheck() {
 
 func (f *Fallback) healthCheckForProxy(proxy C.Proxy) {
 	if proxy == nil {
-		log.Warnln("[APP] fallback scoped-health-check\tgroup=%s\tproxy=<nil>\tscope=self-only", f.Name())
+		log.Warnln("[应用] fallback 范围健康检测\tgroup=%s\tproxy=<nil>\tscope=仅自身", f.Name())
 		f.GroupBase.healthCheck(f.testUrl, f.expectedStatus)
 		closed := statistic.DefaultManager.CloseConnectionsUsingProxyGroup(f.Name())
-		log.Warnln("[APP] fallback scoped-close\tgroup=%s\tproxy=<nil>\tclosed=%d", f.Name(), closed)
+		log.Warnln("[应用] fallback 范围关闭连接\tgroup=%s\tproxy=<nil>\tclosed=%d", f.Name(), closed)
 		return
 	}
 
@@ -101,9 +101,9 @@ func (f *Fallback) healthCheckForProxy(proxy C.Proxy) {
 		groupNames = append(groupNames, group.Name())
 		groupNamesLog = append(groupNamesLog, group.Name())
 	}
-	log.Warnln("[APP] fallback scoped-health-check\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s", f.Name(), proxyName, strings.Join(groupNamesLog, ","))
+	log.Warnln("[应用] fallback 范围健康检测\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s", f.Name(), proxyName, strings.Join(groupNamesLog, ","))
 	closed := statistic.DefaultManager.CloseConnectionsUsingProxyGroupsAndProxy(groupNames, proxyName)
-	log.Warnln("[APP] fallback scoped-close\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s\tclosed=%d", f.Name(), proxyName, strings.Join(groupNamesLog, ","), closed)
+	log.Warnln("[应用] fallback 范围关闭连接\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s\tclosed=%d", f.Name(), proxyName, strings.Join(groupNamesLog, ","), closed)
 }
 
 func (f *Fallback) fallbackGroupsUsingProxy(proxyName string) []*Fallback {

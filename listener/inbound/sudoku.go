@@ -129,7 +129,7 @@ func (s *Sudoku) Listen(tunnel C.Tunnel) error {
 		return errors.Join(errs...)
 	}
 
-	log.Infoln("Sudoku[%s] inbound listening at: %s", s.Name(), s.Address())
+	log.Infoln("Sudoku[%s] 入站监听地址: %s", s.Name(), s.Address())
 	return nil
 }
 

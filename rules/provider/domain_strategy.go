@@ -46,12 +46,12 @@ func (d *domainStrategy) Reset() {
 
 func (d *domainStrategy) Insert(rule string) {
 	if strings.ContainsRune(rule, '/') {
-		log.Warnln("invalid domain:[%s]", rule)
+		log.Warnln("无效的域名:[%s]", rule)
 		return
 	}
 	err := d.domainTrie.Insert(rule, struct{}{})
 	if err != nil {
-		log.Warnln("invalid domain:[%s]", rule)
+		log.Warnln("无效的域名:[%s]", rule)
 	} else {
 		d.count++
 	}

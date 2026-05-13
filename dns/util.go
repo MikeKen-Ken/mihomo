@@ -60,7 +60,7 @@ func getMsgFromCache(c dnsCache, q D.Question) (*D.Msg, time.Time, bool) {
 func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg) {
 	// skip dns cache for acme challenge
 	if q.Qtype == D.TypeTXT && strings.HasPrefix(q.Name, "_acme-challenge.") {
-		log.Debugln("[DNS] dns cache ignored because of acme challenge for: %s", q.Name)
+		log.Debugln("[DNS] 因 ACME 校验跳过 DNS 缓存: %s", q.Name)
 		return
 	}
 
@@ -223,7 +223,7 @@ func warpClientWithEdns0Subnet(c dnsClient, params map[string]string) dnsClient 
 		if err != nil {
 			addr, err := netip.ParseAddr(ecs)
 			if err != nil {
-				log.Warnln("DNS [%s] config with invalid ecs: %s", c.Address(), ecs)
+				log.Warnln("DNS [%s] 配置中 ECS 无效: %s", c.Address(), ecs)
 			} else {
 				ecsPrefix = netip.PrefixFrom(addr, addr.BitLen())
 			}
@@ -233,7 +233,7 @@ func warpClientWithEdns0Subnet(c dnsClient, params map[string]string) dnsClient 
 	}
 
 	if ecsPrefix.IsValid() {
-		log.Debugln("DNS [%s] config with ecs: %s", c.Address(), ecsPrefix)
+		log.Debugln("DNS [%s] 配置 ECS: %s", c.Address(), ecsPrefix)
 		if params["ecs-override"] == "true" {
 			ecsOverride = true
 		}
@@ -377,7 +377,7 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 		}
 		client := client // shadow define client to ensure the value captured by the closure will not be changed in the next loop
 		fast.Go(func() (*D.Msg, error) {
-			log.Debugln("[DNS] resolve %s %s from %s", domain, qTypeStr, client.Address())
+			log.Debugln("[DNS] 解析 %s %s，来自 %s", domain, qTypeStr, client.Address())
 			m, err := client.ExchangeContext(ctx, m)
 			if err != nil {
 				return nil, err
@@ -386,7 +386,7 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 				// so we would ignore RCode errors from RCode clients.
 				return nil, errors.New("server failure: " + D.RcodeToString[m.Rcode])
 			}
-			log.Debugln("[DNS] %s --> %s from %s", domain, msgToLogString(m), client.Address())
+			log.Debugln("[DNS] %s --> %s，来自 %s", domain, msgToLogString(m), client.Address())
 			return m, nil
 		})
 	}

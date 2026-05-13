@@ -62,13 +62,13 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide
 	}
 
 	if _, ok := config["routing-mark"]; ok {
-		log.Errorln("The group [%s] with routing-mark configuration was removed, please set it directly on the proxy instead", groupOption.Name)
+		log.Errorln("代理组 [%s] 的 routing-mark 配置已移除，请直接在代理上设置", groupOption.Name)
 	}
 	if _, ok := config["interface-name"]; ok {
-		log.Errorln("The group [%s] with interface-name configuration was removed, please set it directly on the proxy instead", groupOption.Name)
+		log.Errorln("代理组 [%s] 的 interface-name 配置已移除，请直接在代理上设置", groupOption.Name)
 	}
 	if _, ok := config["dialer-proxy"]; ok {
-		log.Errorln("The group [%s] with dialer-proxy configuration is not allowed, please set it directly on the proxy instead", groupOption.Name)
+		log.Errorln("代理组 [%s] 不允许使用 dialer-proxy，请直接在代理上设置", groupOption.Name)
 	}
 
 	groupName := groupOption.Name

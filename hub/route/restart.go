@@ -47,21 +47,21 @@ func restartExecutable(execPath string) {
 	executor.Shutdown()
 	if runtime.GOOS == "windows" {
 		cmd := exec.Command(execPath, os.Args[1:]...)
-		log.Infoln("restarting: %q %q", execPath, os.Args[1:])
+		log.Infoln("正在重启: %q %q", execPath, os.Args[1:])
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		err = cmd.Start()
 		if err != nil {
-			log.Fatalln("restarting: %s", err)
+			log.Fatalln("重启失败: %s", err)
 		}
 
 		os.Exit(0)
 	}
 
-	log.Infoln("restarting: %q %q", execPath, os.Args[1:])
+	log.Infoln("正在重启: %q %q", execPath, os.Args[1:])
 	err = syscall.Exec(execPath, os.Args, os.Environ())
 	if err != nil {
-		log.Fatalln("restarting: %s", err)
+		log.Fatalln("重启失败: %s", err)
 	}
 }

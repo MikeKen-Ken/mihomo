@@ -53,12 +53,12 @@ func ReCreateNTPService(server string, interval time.Duration, dialerProxy strin
 }
 
 func (srv *Service) Start() {
-	log.Infoln("NTP service start, sync system time is %t", srv.syncSystemTime)
+	log.Infoln("NTP 服务启动，同步系统时间: %t", srv.syncSystemTime)
 	go srv.loopUpdate()
 }
 
 func (srv *Service) Stop() {
-	log.Infoln("NTP service stop")
+	log.Infoln("NTP 服务停止")
 	srv.cancel()
 }
 
@@ -75,18 +75,18 @@ func (srv *Service) update() error {
 		}
 		offset := response.ClockOffset
 		if offset > time.Duration(0) {
-			log.Infoln("System clock is ahead of NTP time by %s", offset)
+			log.Infoln("系统时钟比 NTP 快 %s", offset)
 		} else if offset < time.Duration(0) {
-			log.Infoln("System clock is behind NTP time by %s", -offset)
+			log.Infoln("系统时钟比 NTP 慢 %s", -offset)
 		}
 		mihomoNtp.SetOffset(offset)
 		if srv.syncSystemTime {
 			timeNow := response.Time
 			syncErr := setSystemTime(timeNow)
 			if syncErr == nil {
-				log.Infoln("Sync system time success: %s", timeNow.Local().Format(ntp.TimeLayout))
+				log.Infoln("同步系统时间成功: %s", timeNow.Local().Format(ntp.TimeLayout))
 			} else {
-				log.Errorln("Write time to system: %s", syncErr)
+				log.Errorln("写入系统时间失败: %s", syncErr)
 				srv.syncSystemTime = false
 			}
 		}
@@ -101,7 +101,7 @@ func (srv *Service) loopUpdate() {
 	for {
 		err := srv.update()
 		if err != nil {
-			log.Warnln("Sync time failed: %s", err)
+			log.Warnln("同步时间失败: %s", err)
 		}
 		select {
 		case <-srv.ctx.Done():

@@ -77,12 +77,12 @@ func (u *UIUpdater) AutoDownloadUI() {
 	if u.autoDownloadUI {
 		dirEntries, _ := os.ReadDir(u.externalUIPath)
 		if len(dirEntries) > 0 {
-			log.Infoln("UI already exists, skip downloading")
+			log.Infoln("外部 UI 已存在，跳过下载")
 		} else {
-			log.Infoln("External UI downloading ...")
+			log.Infoln("正在下载外部 UI ...")
 			err := u.downloadUI()
 			if err != nil {
-				log.Errorln("Error downloading UI: %s", err)
+				log.Errorln("下载外部 UI 失败: %s", err)
 			}
 		}
 	}
@@ -122,13 +122,13 @@ func (u *UIUpdater) downloadUI() error {
 	defer os.RemoveAll(tmpDir)
 
 	os.RemoveAll(tmpDir) // cleanup tmp dir before extract
-	log.Debugln("extractedFolder: %s", tmpDir)
+	log.Debugln("解压目录: %s", tmpDir)
 	err = extract(data, tmpDir)
 	if err != nil {
 		return fmt.Errorf("can't extract compressed file: %w", err)
 	}
 
-	log.Debugln("cleanupFolder: %s", u.externalUIPath)
+	log.Debugln("清理目录: %s", u.externalUIPath)
 	err = cleanup(u.externalUIPath) // cleanup files in dir don't remove dir itself
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -141,7 +141,7 @@ func (u *UIUpdater) downloadUI() error {
 		return fmt.Errorf("prepare UI path failed: %w", err)
 	}
 
-	log.Debugln("moveFolder from %s to %s", tmpDir, u.externalUIPath)
+	log.Debugln("移动目录 %s -> %s", tmpDir, u.externalUIPath)
 	err = moveDir(tmpDir, u.externalUIPath) // move files from tmp to target
 	if err != nil {
 		return fmt.Errorf("move UI folder failed: %w", err)
@@ -151,9 +151,9 @@ func (u *UIUpdater) downloadUI() error {
 
 func (u *UIUpdater) prepareUIPath() error {
 	if _, err := os.Stat(u.externalUIPath); os.IsNotExist(err) {
-		log.Infoln("dir %s does not exist, creating", u.externalUIPath)
+		log.Infoln("目录 %s 不存在，正在创建", u.externalUIPath)
 		if err := os.MkdirAll(u.externalUIPath, os.ModePerm); err != nil {
-			log.Warnln("create dir %s error: %s", u.externalUIPath, err)
+			log.Warnln("创建目录 %s 失败: %s", u.externalUIPath, err)
 		}
 	}
 	return nil
@@ -251,7 +251,7 @@ func untgz(data []byte, dest string) error {
 
 func extract(data []byte, dest string) error {
 	fileType := detectFileType(data)
-	log.Debugln("compression Type: %s", fileType)
+	log.Debugln("压缩类型: %s", fileType)
 	switch fileType {
 	case typeZip:
 		return unzip(data, dest)
@@ -302,7 +302,7 @@ func moveDir(src string, dst string) error {
 
 	if len(dirEntryList) == 1 && dirEntryList[0].IsDir() {
 		src = filepath.Join(src, dirEntryList[0].Name())
-		log.Debugln("match the singleRoot: %s", src)
+		log.Debugln("匹配到单根目录: %s", src)
 		dirEntryList, err = os.ReadDir(src)
 		if err != nil {
 			return err

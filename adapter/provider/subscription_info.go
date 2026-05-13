@@ -27,7 +27,7 @@ func NewSubscriptionInfo(userinfo string) (si *SubscriptionInfo) {
 
 		intValue, err := parseValue(value)
 		if err != nil {
-			log.Warnln("[Provider] get subscription-userinfo: %e", err)
+			log.Warnln("[Provider] 获取 subscription-userinfo 失败: %e", err)
 			continue
 		}
 

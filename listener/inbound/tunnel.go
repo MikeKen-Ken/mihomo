@@ -94,12 +94,12 @@ func (t *Tunnel) Listen(tunnel C.Tunnel) error {
 				}
 				t.tul = append(t.tul, tul)
 			default:
-				log.Warnln("unknown network type: %s, passed", network)
+				log.Warnln("未知网络类型: %s，已放行", network)
 				continue
 			}
 		}
 	}
-	log.Infoln("Tunnel[%s](%s)proxy listening at: %s", t.Name(), t.config.Target, t.Address())
+	log.Infoln("Tunnel[%s](%s)代理监听地址: %s", t.Name(), t.config.Target, t.Address())
 	return nil
 }
 

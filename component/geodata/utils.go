@@ -95,7 +95,7 @@ func LoadGeoSiteMatcher(countryCode string) (router.DomainMatcher, error) {
 		matcherName += "@" + attrs.String()
 	}
 	matcher, err, shared := loadGeoSiteMatcherSF.Do(matcherName, func() (router.DomainMatcher, error) {
-		log.Infoln("Load GeoSite rule: %s", matcherName)
+		log.Infoln("加载 GeoSite 规则: %s", matcherName)
 		domains, err, shared := loadGeoSiteMatcherListSF.Do(listName, func() ([]*router.Domain, error) {
 			geoLoader, err := GetGeoDataLoader(geoLoaderName)
 			if err != nil {
@@ -112,7 +112,7 @@ func LoadGeoSiteMatcher(countryCode string) (router.DomainMatcher, error) {
 
 		if attrs.IsEmpty() {
 			if strings.Contains(countryCode, "@") {
-				log.Warnln("empty attribute list: %s", countryCode)
+				log.Warnln("属性列表为空: %s", countryCode)
 			}
 		} else {
 			filteredDomains := make([]*router.Domain, 0, len(domains))
@@ -124,7 +124,7 @@ func LoadGeoSiteMatcher(countryCode string) (router.DomainMatcher, error) {
 				}
 			}
 			if !hasAttrMatched {
-				log.Warnln("attribute match no rule: geosite: %s", countryCode)
+				log.Warnln("属性未匹配到任何规则: geosite: %s", countryCode)
 			}
 			domains = filteredDomains
 		}
@@ -168,7 +168,7 @@ func LoadGeoIPMatcher(country string) (router.IPMatcher, error) {
 	country = strings.ToLower(country)
 
 	matcher, err, shared := loadGeoIPMatcherSF.Do(country, func() (router.IPMatcher, error) {
-		log.Infoln("Load GeoIP rule: %s", country)
+		log.Infoln("加载 GeoIP 规则: %s", country)
 		geoLoader, err := GetGeoDataLoader(geoLoaderName)
 		if err != nil {
 			return nil, err
@@ -182,7 +182,7 @@ func LoadGeoIPMatcher(country string) (router.IPMatcher, error) {
 	if err != nil {
 		if !shared {
 			loadGeoIPMatcherSF.Forget(country) // don't store the error result
-			log.Warnln("Load GeoIP rule: %s", country)
+			log.Warnln("加载 GeoIP 规则失败: %s", country)
 		}
 		return nil, err
 	}

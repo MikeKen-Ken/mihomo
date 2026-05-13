@@ -150,7 +150,7 @@ func (f *Fetcher[V]) pullLoop(forceUpdate bool) {
 	}
 
 	if forceUpdate {
-		log.Warnln("[Provider] %s not updated for a long time, force refresh", f.Name())
+		log.Warnln("[Provider] %s 长期未更新，强制刷新", f.Name())
 		f.updateWithLog()
 	}
 	if attempt := f.backoff.Attempt(); attempt > 0 { // f.Update() was failed, decrease the interval from backoff to achieve fast retry
@@ -205,16 +205,16 @@ func (f *Fetcher[V]) updateCallback(path string) {
 func (f *Fetcher[V]) updateWithLog() {
 	_, same, err := f.Update()
 	if err != nil {
-		log.Errorln("[Provider] %s pull error: %s", f.Name(), err.Error())
+		log.Errorln("[Provider] %s 拉取失败: %s", f.Name(), err.Error())
 		return
 	}
 
 	if same {
-		log.Debugln("[Provider] %s's content doesn't change", f.Name())
+		log.Debugln("[Provider] %s 内容无变化", f.Name())
 		return
 	}
 
-	log.Infoln("[Provider] %s's content update", f.Name())
+	log.Infoln("[Provider] %s 内容已更新", f.Name())
 	return
 }
 

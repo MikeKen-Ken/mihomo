@@ -19,7 +19,7 @@ func (c *systemClient) getDnsClients() ([]dnsClient, error) {
 	if time.Since(c.lastFlush) > SystemDnsFlushTime {
 		var nameservers []string
 		if nameservers, err = dnsReadConfig(); err == nil {
-			log.Debugln("[DNS] system dns update to %s", nameservers)
+			log.Debugln("[DNS] 系统 DNS 已更新为 %s", nameservers)
 			for _, addr := range nameservers {
 				if resolver.IsSystemDnsBlacklisted(addr) {
 					continue

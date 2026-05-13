@@ -160,10 +160,10 @@ func authenticate(request *http.Request, authenticator auth.Authenticator) (resp
 	user, pass, err := decodeBasicProxyAuthorization(credential)
 	authed := authenticator == nil || (err == nil && authenticator.Verify(user, pass))
 	if !authed {
-		log.Infoln("Auth failed from %s", request.RemoteAddr)
+		log.Infoln("认证失败，来源 %s", request.RemoteAddr)
 		return responseWith(request, http.StatusForbidden), user
 	}
-	log.Debugln("Auth success from %s -> %s", request.RemoteAddr, user)
+	log.Debugln("认证成功 %s -> %s", request.RemoteAddr, user)
 	return
 }
 

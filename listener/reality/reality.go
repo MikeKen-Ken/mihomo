@@ -98,7 +98,7 @@ func (b Builder) NewListener(l net.Listener) net.Listener {
 		return realityConnWrapper{c}, nil
 	}, func(a any) {
 		stack := debug.Stack()
-		log.Errorln("reality server panic: %s\n%s", a, stack)
+		log.Errorln("reality 服务 panic: %s\n%s", a, stack)
 	})
 }
 

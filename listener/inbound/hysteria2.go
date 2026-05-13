@@ -109,7 +109,7 @@ func (t *Hysteria2) Listen(tunnel C.Tunnel) error {
 	if err != nil {
 		return err
 	}
-	log.Infoln("Hysteria2[%s] proxy listening at: %s", t.Name(), t.Address())
+	log.Infoln("Hysteria2[%s] 代理监听地址: %s", t.Name(), t.Address())
 	return nil
 }
 

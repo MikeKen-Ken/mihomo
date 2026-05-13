@@ -379,12 +379,12 @@ func (w *WireGuard) updateServerAddr(ctx context.Context) {
 			defer w.serverAddrMutex.Unlock()
 			ipcConf, err := w.genIpcConf(ctx, true)
 			if err != nil {
-				log.Warnln("[WG](%s)UpdateServerAddr failed to generate wireguard ipc conf: %s", w.option.Name, err)
+				log.Warnln("[WG](%s) UpdateServerAddr 生成 WireGuard IPC 配置失败: %s", w.option.Name, err)
 				return
 			}
 			err = w.device.IpcSet(ipcConf)
 			if err != nil {
-				log.Warnln("[WG](%s)UpdateServerAddr failed to update wireguard ipc conf: %s", w.option.Name, err)
+				log.Warnln("[WG](%s) UpdateServerAddr 更新 WireGuard IPC 配置失败: %s", w.option.Name, err)
 				return
 			}
 			w.serverAddrTime.Store(time.Now())

@@ -288,7 +288,7 @@ func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedSta
 	notifyProxyGroupRefresh(gb.Name())
 
 	if !shouldTest {
-		log.Debugln("ProxyGroup: %s max-connect-times request count not reached cooldown, count=%d/%d", gb.Name(), currentConnectTimes, gb.maxConnectTimes)
+		log.Debugln("代理组 %s：max-connect-times 计数未达冷却阈值，count=%d/%d", gb.Name(), currentConnectTimes, gb.maxConnectTimes)
 		return
 	}
 	if !gb.connectTesting.CompareAndSwap(false, true) {
@@ -308,7 +308,7 @@ func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedSta
 
 		status, err := utils.NewUnsignedRanges[uint16](expectedStatus)
 		if err != nil {
-			log.Debugln("ProxyGroup: %s max connect times test skipped: %v", gb.Name(), err)
+			log.Debugln("代理组 %s：跳过 max-connect-times 测试: %v", gb.Name(), err)
 			return
 		}
 
@@ -320,28 +320,28 @@ func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedSta
 			return proxy.URLTest(ctx, testURL, status)
 		}
 
-		log.Warnln("[APP] max-connect-times test triggered\tgroup=%s\tproxy=%s\tthreshold=%d\ttimeoutMs=%d", gb.Name(), proxy.Name(), gb.maxConnectTimes, timeoutMs)
+		log.Warnln("[应用] max-connect-times 检测启动\tgroup=%s\tproxy=%s\tthreshold=%d\ttimeoutMs=%d", gb.Name(), proxy.Name(), gb.maxConnectTimes, timeoutMs)
 		notifyMaxConnectTimesTestTriggered(gb.Name(), proxy.Name())
 
 		delay, testErr := runURLTest()
 		if testErr == nil {
-			log.Warnln("[APP] max-connect-times test result\t%s\t%s\tsuccess\t%d", gb.Name(), proxy.Name(), delay)
+			log.Warnln("[应用] max-connect-times 检测结果\t%s\t%s\t成功\t%d", gb.Name(), proxy.Name(), delay)
 			return
 		}
 
-		log.Warnln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxy.Name(), testErr)
-		log.Debugln("ProxyGroup: %s current proxy %s failed max connect times test: %v", gb.Name(), proxy.Name(), testErr)
-		log.Warnln("[APP] max-connect-times test retry\tgroup=%s\tproxy=%s\treason=first-test-failed", gb.Name(), proxy.Name())
+		log.Warnln("[应用] max-connect-times 检测结果\t%s\t%s\t失败\t%v", gb.Name(), proxy.Name(), testErr)
+		log.Debugln("代理组 %s 当前代理 %s max-connect-times 检测失败: %v", gb.Name(), proxy.Name(), testErr)
+		log.Warnln("[应用] max-connect-times 重试\tgroup=%s\tproxy=%s\treason=首次检测失败", gb.Name(), proxy.Name())
 
 		retryDelay, retryErr := runURLTest()
 		if retryErr == nil {
-			log.Warnln("[APP] max-connect-times test result\t%s\t%s\tsuccess\t%d", gb.Name(), proxy.Name(), retryDelay)
+			log.Warnln("[应用] max-connect-times 检测结果\t%s\t%s\t成功\t%d", gb.Name(), proxy.Name(), retryDelay)
 			return
 		}
 
-		log.Warnln("[APP] max-connect-times test result\t%s\t%s\tfail\t%v", gb.Name(), proxy.Name(), retryErr)
-		log.Warnln("[APP] max-connect-times health-check triggered\tgroup=%s\tproxy=%s\treason=retry-fail", gb.Name(), proxy.Name())
-		log.Infoln("ProxyGroup: %s current proxy %s failed max connect times test twice, trigger health check", gb.Name(), proxy.Name())
+		log.Warnln("[应用] max-connect-times 检测结果\t%s\t%s\t失败\t%v", gb.Name(), proxy.Name(), retryErr)
+		log.Warnln("[应用] max-connect-times 触发健康检测\tgroup=%s\tproxy=%s\treason=重试仍失败", gb.Name(), proxy.Name())
+		log.Infoln("代理组 %s 当前代理 %s 连续两次 max-connect-times 检测失败，触发健康检测", gb.Name(), proxy.Name())
 		fn()
 	}()
 }
@@ -422,7 +422,7 @@ func (gb *GroupBase) onDialFailed(ctx context.Context, adapterType C.AdapterType
 			return
 		}
 		if strings.Contains(err.Error(), "connection refused") {
-			log.Warnln("[APP] max-failed-times health-check triggered\tgroup=%s\treason=connection-refused", gb.Name())
+			log.Warnln("[应用] max-failed-times 触发健康检测\tgroup=%s\treason=连接被拒绝", gb.Name())
 			fn()
 			return
 		}
@@ -432,26 +432,26 @@ func (gb *GroupBase) onDialFailed(ctx context.Context, adapterType C.AdapterType
 
 		gb.failedTimes++
 		if gb.failedTimes == 1 {
-			log.Debugln("ProxyGroup: %s first failed", gb.Name())
+			log.Debugln("代理组 %s 首次失败", gb.Name())
 			gb.failedTime = time.Now()
-			log.Warnln("[APP] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
+			log.Warnln("[应用] max-failed-times 更新\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
 			if gb.failedTimes >= gb.maxFailedTimes {
-				log.Warnln("because %s failed multiple times, active health check", gb.Name())
-				log.Warnln("[APP] max-failed-times health-check triggered\tgroup=%s\tcount=%d\tthreshold=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes)
+				log.Warnln("因 %s 多次失败，启动主动健康检测", gb.Name())
+				log.Warnln("[应用] max-failed-times 触发健康检测\tgroup=%s\tcount=%d\tthreshold=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes)
 				fn()
 			}
 		} else {
 			if time.Since(gb.failedTime) > time.Duration(gb.failureResetInterval)*time.Millisecond {
-				log.Warnln("[APP] max-failed-times reset\tgroup=%s\treason=window-expired\tcount=%d", gb.Name(), gb.failedTimes)
+				log.Warnln("[应用] max-failed-times 重置\tgroup=%s\treason=窗口过期\tcount=%d", gb.Name(), gb.failedTimes)
 				gb.failedTimes = 0
 				return
 			}
 
-			log.Debugln("ProxyGroup: %s failed count: %d", gb.Name(), gb.failedTimes)
-			log.Warnln("[APP] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
+			log.Debugln("代理组 %s 失败计数: %d", gb.Name(), gb.failedTimes)
+			log.Warnln("[应用] max-failed-times 更新\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
 			if gb.failedTimes >= gb.maxFailedTimes {
-				log.Warnln("because %s failed multiple times, activate health check", gb.Name())
-				log.Warnln("[APP] max-failed-times health-check triggered\tgroup=%s\tcount=%d\tthreshold=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes)
+				log.Warnln("因 %s 多次失败，激活健康检测", gb.Name())
+				log.Warnln("[应用] max-failed-times 触发健康检测\tgroup=%s\tcount=%d\tthreshold=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes)
 				fn()
 			}
 		}
@@ -468,13 +468,13 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 
 	// Notify health check triggered for fallback groups (CFA only)
 	if gb.Type() == C.Fallback {
-		log.Infoln("Fallback group %s triggered health check", gb.Name())
+		log.Infoln("Fallback 组 %s 触发健康检测", gb.Name())
 		notifyHealthCheckTriggered(gb.Name())
 	}
 
 	expectedStatus, err := utils.NewUnsignedRanges[uint16](expectedStatusText)
 	if err != nil {
-		log.Warnln("ProxyGroup: %s parse expected status failed: %s", gb.Name(), err.Error())
+		log.Warnln("代理组 %s 解析 expected-status 失败: %s", gb.Name(), err.Error())
 		expectedStatus = nil
 	}
 	targetNames := gb.healthCheckTargetNames()
@@ -486,7 +486,7 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 			continue
 		}
 		if proxyProvider.HealthCheckURLUntilHealthy(testURL, expectedStatus, targetNames) {
-			log.Infoln("ProxyGroup: %s stop health check early after finding healthy proxy", gb.Name())
+			log.Infoln("代理组 %s 已找到健康代理，提前结束健康检测", gb.Name())
 			break
 		}
 	}

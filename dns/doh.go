@@ -302,11 +302,11 @@ func (doh *dnsOverHTTPS) resetClient(ctx context.Context, resetErr error) (clien
 	if oldClient != nil {
 		closeErr := doh.closeClient(oldClient)
 		if closeErr != nil {
-			log.Warnln("warning: failed to close the old http client: %v", closeErr)
+			log.Warnln("警告: 关闭旧 HTTP 客户端失败: %v", closeErr)
 		}
 	}
 
-	log.Debugln("re-creating the http client due to %v", resetErr)
+	log.Debugln("因 %v 重新创建 HTTP 客户端", resetErr)
 	doh.client, err = doh.createClient(ctx)
 
 	return doh.client, err
@@ -349,7 +349,7 @@ func (doh *dnsOverHTTPS) getClient(ctx context.Context) (c *http.Client, isCache
 		return nil, false, fmt.Errorf("timeout exceeded: %s", elapsed)
 	}
 
-	log.Debugln("creating a new http client")
+	log.Debugln("正在创建新的 HTTP 客户端")
 	doh.client, err = doh.createClient(ctx)
 
 	return doh.client, false, err
@@ -418,12 +418,12 @@ func (doh *dnsOverHTTPS) createTransport(ctx context.Context) (t http.RoundTripp
 		// upstream.
 		transportH3, err := doh.createTransportH3(ctx, tlsConfig)
 		if err == nil {
-			log.Debugln("[%s] using HTTP/3 for this upstream: QUIC was faster", doh.url.String())
+			log.Debugln("[%s] 本上游使用 HTTP/3：QUIC 更快", doh.url.String())
 			return transportH3, nil
 		}
 	}
 
-	log.Debugln("[%s] using HTTP/2 for this upstream: %v", doh.url.String(), err)
+	log.Debugln("[%s] 本上游使用 HTTP/2: %v", doh.url.String(), err)
 
 	if !doh.supportsHTTP() {
 		return nil, errors.New("HTTP1/1 and HTTP2 are not supported by this upstream")
@@ -623,7 +623,7 @@ func (doh *dnsOverHTTPS) probeH3(
 	case tlsErr := <-chTLS:
 		if tlsErr != nil {
 			// Return immediately, TLS failed.
-			log.Debugln("probing TLS: %v", tlsErr)
+			log.Debugln("探测 TLS: %v", tlsErr)
 			return addr, nil
 		}
 
@@ -647,7 +647,7 @@ func (doh *dnsOverHTTPS) probeQUIC(ctx context.Context, addr string, tlsConfig *
 	ch <- nil
 
 	elapsed := time.Now().Sub(startTime)
-	log.Debugln("elapsed on establishing a QUIC connection: %s", elapsed)
+	log.Debugln("建立 QUIC 连接耗时: %s", elapsed)
 }
 
 // probeTLS attempts to establish a TLS connection to the specified address. We
@@ -667,7 +667,7 @@ func (doh *dnsOverHTTPS) probeTLS(ctx context.Context, tlsConfig *tls.Config, ch
 	ch <- nil
 
 	elapsed := time.Now().Sub(startTime)
-	log.Debugln("elapsed on establishing a TLS connection: %s", elapsed)
+	log.Debugln("建立 TLS 连接耗时: %s", elapsed)
 }
 
 // supportsH3 returns true if HTTP/3 is supported by this upstream.

@@ -378,7 +378,7 @@ func (p *autoCloseProxyAdapter) ListenPacketContext(ctx context.Context, metadat
 
 func (p *autoCloseProxyAdapter) Close() error {
 	p.closeOnce.Do(func() {
-		log.Debugln("Closing outdated proxy [%s]", p.Name())
+		log.Debugln("正在关闭过期代理 [%s]", p.Name())
 		runtime.SetFinalizer(p, nil)
 		p.closeErr = p.ProxyAdapter.Close()
 	})

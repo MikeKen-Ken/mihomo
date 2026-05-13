@@ -123,7 +123,7 @@ func New(config LC.TrustTunnelServer, tunnel C.Tunnel, additions ...inbound.Addi
 			}
 
 			if err := sockopt.UDPReuseaddr(udpConn); err != nil {
-				log.Warnln("Failed to Reuse UDP Address: %s", err)
+				log.Warnln("复用 UDP 地址失败: %s", err)
 			}
 			sl.udpListeners = append(sl.udpListeners, udpConn)
 		}

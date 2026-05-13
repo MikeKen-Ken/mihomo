@@ -200,7 +200,7 @@ func New(config LC.Hysteria2Server, tunnel C.Tunnel, additions ...inbound.Additi
 		}
 
 		if err := sockopt.UDPReuseaddr(ul); err != nil {
-			log.Warnln("Failed to Reuse UDP Address: %s", err)
+			log.Warnln("复用 UDP 地址失败: %s", err)
 		}
 
 		sl.udpListeners = append(sl.udpListeners, ul)

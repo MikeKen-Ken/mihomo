@@ -167,7 +167,7 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
 	domain := msgToDomain(m)
 	msg, expireTime, hit := getMsgFromCache(r.cache, q)
 	if hit {
-		log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
+		log.Debugln("[DNS] 缓存命中 %s --> %s，过期时间 %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
 		now := time.Now()
 		if expireTime.Before(now) {
 			setMsgTTL(msg, uint32(1)) // Continue fetch

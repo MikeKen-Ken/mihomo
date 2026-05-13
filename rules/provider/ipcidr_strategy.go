@@ -54,7 +54,7 @@ func (i *ipcidrStrategy) Insert(rule string) {
 	//err := i.trie.AddIpCidrForString(rule)
 	err := i.cidrSet.AddIpCidrForString(rule)
 	if err != nil {
-		log.Warnln("invalid Ipcidr:[%s]", rule)
+		log.Warnln("无效的 IPCIDR:[%s]", rule)
 	} else {
 		i.count++
 	}

@@ -20,7 +20,7 @@ func (c *CacheFile) SetSubscriptionInfo(name string, userInfo string) {
 		return bucket.Put([]byte(name), []byte(userInfo))
 	})
 	if err != nil {
-		log.Warnln("[CacheFile] write cache to %s failed: %s", c.DB.Path(), err.Error())
+		log.Warnln("[CacheFile] 写入缓存到 %s 失败: %s", c.DB.Path(), err.Error())
 		return
 	}
 }

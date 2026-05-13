@@ -29,7 +29,7 @@ func LoadFromBytes(buffer []byte) {
 	ipOnce.Do(func() {
 		mmdb, err := maxminddb.FromBytes(buffer)
 		if err != nil {
-			log.Fatalln("Can't load mmdb: %s", err.Error())
+			log.Fatalln("无法加载 mmdb: %s", err.Error())
 		}
 		ipReader = IPReader{Reader: mmdb}
 		switch mmdb.Metadata.DatabaseType {
@@ -54,10 +54,10 @@ func Verify(path string) bool {
 func IPInstance() IPReader {
 	ipOnce.Do(func() {
 		mmdbPath := C.Path.MMDB()
-		log.Infoln("Load MMDB file: %s", mmdbPath)
+		log.Infoln("加载 MMDB 文件: %s", mmdbPath)
 		mmdb, err := maxminddb.Open(mmdbPath)
 		if err != nil {
-			log.Fatalln("Can't load MMDB: %s", err.Error())
+			log.Fatalln("无法加载 MMDB: %s", err.Error())
 		}
 		ipReader = IPReader{Reader: mmdb}
 		switch mmdb.Metadata.DatabaseType {
@@ -76,10 +76,10 @@ func IPInstance() IPReader {
 func ASNInstance() ASNReader {
 	asnOnce.Do(func() {
 		ASNPath := C.Path.ASN()
-		log.Infoln("Load ASN file: %s", ASNPath)
+		log.Infoln("加载 ASN 文件: %s", ASNPath)
 		asn, err := maxminddb.Open(ASNPath)
 		if err != nil {
-			log.Fatalln("Can't load ASN: %s", err.Error())
+			log.Fatalln("无法加载 ASN: %s", err.Error())
 		}
 		asnReader = ASNReader{Reader: asn}
 	})

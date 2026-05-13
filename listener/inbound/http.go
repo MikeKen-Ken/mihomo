@@ -80,7 +80,7 @@ func (h *HTTP) Listen(tunnel C.Tunnel) error {
 		}
 		h.l = append(h.l, l)
 	}
-	log.Infoln("HTTP[%s] proxy listening at: %s", h.Name(), h.Address())
+	log.Infoln("HTTP[%s] 代理监听地址: %s", h.Name(), h.Address())
 	return nil
 }
 

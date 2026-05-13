@@ -86,7 +86,7 @@ func (s *packetSender) processPacket(pc C.PacketConn, packet C.PacketAdapter) {
 			// TODO: ResolveUDP may take a long time to block the Process loop
 			//       but we want keep sequence sending so can't open a new goroutine
 			if err := pc.ResolveUDP(s.ctx, metadata); err != nil {
-				log.Warnln("[UDP] Resolve Ip error: %s", err)
+				log.Warnln("[UDP] 解析 IP 失败: %s", err)
 				return
 			}
 		}
@@ -183,10 +183,10 @@ func handleUDPToLocal(writeBack C.WriteBack, pc C.PacketConn, sender C.PacketSen
 		fromUDPAddr, isUDPAddr := from.(*net.UDPAddr)
 		if !isUDPAddr {
 			fromUDPAddr = net.UDPAddrFromAddrPort(oAddrPort) // oAddrPort was Unmapped
-			log.Warnln("server return a [%T](%s) which isn't a *net.UDPAddr, force replace to (%s), this may be caused by a wrongly implemented server", from, from, oAddrPort)
+			log.Warnln("服务端返回 [%T](%s) 非 *net.UDPAddr，已强制替换为 (%s)，可能由服务端实现错误导致", from, from, oAddrPort)
 		} else if fromUDPAddr == nil {
 			fromUDPAddr = net.UDPAddrFromAddrPort(oAddrPort) // oAddrPort was Unmapped
-			log.Warnln("server return a nil *net.UDPAddr, force replace to (%s), this may be caused by a wrongly implemented server", oAddrPort)
+			log.Warnln("服务端返回 nil *net.UDPAddr，已强制替换为 (%s)，可能由服务端实现错误导致", oAddrPort)
 		}
 
 		fromAddrPort := fromUDPAddr.AddrPort()
@@ -212,7 +212,7 @@ func closeAllLocalCoon(lAddr string) {
 		conn := value
 
 		conn.Close()
-		log.Debugln("Closing TProxy local conn... lAddr=%s rAddr=%s", lAddr, key)
+		log.Debugln("正在关闭 TProxy 本地连接… lAddr=%s rAddr=%s", lAddr, key)
 		return true
 	})
 }

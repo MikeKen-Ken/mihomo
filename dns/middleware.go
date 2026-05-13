@@ -209,7 +209,7 @@ func withResolver(resolver *Resolver) handler {
 
 		msg, err := resolver.ExchangeContext(ctx, r)
 		if err != nil {
-			log.Debugln("[DNS Server] Exchange %s failed: %v", q.String(), err)
+			log.Debugln("[DNS Server] 交换 %s 失败: %v", q.String(), err)
 			return msg, err
 		}
 		msg.SetRcode(r, msg.Rcode)

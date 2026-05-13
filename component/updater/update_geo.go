@@ -193,7 +193,7 @@ func updateGeoDatabases() error {
 var ErrGetDatabaseUpdateSkip = errors.New("GEO database is updating, skip")
 
 func UpdateGeoDatabases() error {
-	log.Infoln("[GEO] Start updating GEO database")
+	log.Infoln("[GEO] 开始更新 GEO 数据库")
 
 	if updatingGeo.Load() {
 		return ErrGetDatabaseUpdateSkip
@@ -202,10 +202,10 @@ func UpdateGeoDatabases() error {
 	updatingGeo.Store(true)
 	defer updatingGeo.Store(false)
 
-	log.Infoln("[GEO] Updating GEO database")
+	log.Infoln("[GEO] 正在更新 GEO 数据库")
 
 	if err := updateGeoDatabases(); err != nil {
-		log.Errorln("[GEO] update GEO database error: %s", err.Error())
+		log.Errorln("[GEO] 更新 GEO 数据库出错: %s", err.Error())
 		return err
 	}
 
@@ -233,7 +233,7 @@ func getUpdateTime() (time time.Time, err error) {
 
 func RegisterGeoUpdater() {
 	if updateInterval <= 0 {
-		log.Errorln("[GEO] Invalid update interval: %d", updateInterval)
+		log.Errorln("[GEO] 无效的更新间隔: %d", updateInterval)
 		return
 	}
 
@@ -243,23 +243,23 @@ func RegisterGeoUpdater() {
 
 		lastUpdate, err := getUpdateTime()
 		if err != nil {
-			log.Errorln("[GEO] Get GEO database update time error: %s", err.Error())
+			log.Errorln("[GEO] 获取 GEO 数据库更新时间失败: %s", err.Error())
 			return
 		}
 
-		log.Infoln("[GEO] last update time %s", lastUpdate)
+		log.Infoln("[GEO] 上次更新时间 %s", lastUpdate)
 		if lastUpdate.Add(time.Duration(updateInterval) * time.Hour).Before(time.Now()) {
-			log.Infoln("[GEO] Database has not been updated for %v, update now", time.Duration(updateInterval)*time.Hour)
+			log.Infoln("[GEO] 已超过 %v 未更新，立即更新", time.Duration(updateInterval)*time.Hour)
 			if err := UpdateGeoDatabases(); err != nil {
-				log.Errorln("[GEO] Failed to update GEO database: %s", err.Error())
+				log.Errorln("[GEO] 更新 GEO 数据库失败: %s", err.Error())
 				return
 			}
 		}
 
 		for range ticker.C {
-			log.Infoln("[GEO] updating database every %d hours", updateInterval)
+			log.Infoln("[GEO] 每 %d 小时检查更新数据库", updateInterval)
 			if err := UpdateGeoDatabases(); err != nil {
-				log.Errorln("[GEO] Failed to update GEO database: %s", err.Error())
+				log.Errorln("[GEO] 更新 GEO 数据库失败: %s", err.Error())
 			}
 		}
 	}()

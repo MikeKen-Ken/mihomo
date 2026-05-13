@@ -242,7 +242,7 @@ func (h *ListenerHandler) handlePacket(ctx context.Context, cPacket *packet, sou
 }
 
 func (h *ListenerHandler) NewError(ctx context.Context, err error) {
-	log.Warnln("%s listener get error: %+v", h.Type.String(), err)
+	log.Warnln("%s 监听器出错: %+v", h.Type.String(), err)
 }
 
 func (h *ListenerHandler) TypeMutation(typ C.Type) *ListenerHandler {

@@ -45,7 +45,7 @@ func (c *CacheFile) SetSelected(group, selected string) {
 		return bucket.Put([]byte(group), []byte(selected))
 	})
 	if err != nil {
-		log.Warnln("[CacheFile] write cache to %s failed: %s", c.DB.Path(), err.Error())
+		log.Warnln("[CacheFile] 写入缓存到 %s 失败: %s", c.DB.Path(), err.Error())
 		return
 	}
 }
@@ -83,14 +83,14 @@ func initCache() {
 	switch err {
 	case bbolt.ErrInvalid, bbolt.ErrChecksum, bbolt.ErrVersionMismatch:
 		if err = os.Remove(C.Path.Cache()); err != nil {
-			log.Warnln("[CacheFile] remove invalid cache file error: %s", err.Error())
+			log.Warnln("[CacheFile] 删除无效缓存文件失败: %s", err.Error())
 			break
 		}
-		log.Infoln("[CacheFile] remove invalid cache file and create new one")
+		log.Infoln("[CacheFile] 已删除无效缓存并创建新文件")
 		db, err = bbolt.Open(C.Path.Cache(), fileMode, &options)
 	}
 	if err != nil {
-		log.Warnln("[CacheFile] can't open cache file: %s", err.Error())
+		log.Warnln("[CacheFile] 无法打开缓存文件: %s", err.Error())
 	}
 
 	defaultCache = &CacheFile{

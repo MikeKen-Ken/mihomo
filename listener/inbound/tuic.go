@@ -92,7 +92,7 @@ func (t *Tuic) Listen(tunnel C.Tunnel) error {
 	if err != nil {
 		return err
 	}
-	log.Infoln("Tuic[%s] proxy listening at: %s", t.Name(), t.Address())
+	log.Infoln("Tuic[%s] 代理监听地址: %s", t.Name(), t.Address())
 	return nil
 }
 

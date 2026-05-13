@@ -132,7 +132,7 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 			vc.readRemainingPadding = int(binary.BigEndian.Uint16(header[3:]))
 			vc.readRemainingContent = int(binary.BigEndian.Uint16(header[1:]))
 			vc.readLastCommand = header[0]
-			log.Debugln("XTLS Vision read padding: command=%d, payloadLen=%d, paddingLen=%d",
+			log.Debugln("XTLS Vision 读取 padding: command=%d, payloadLen=%d, paddingLen=%d",
 				vc.readLastCommand, vc.readRemainingContent, vc.readRemainingPadding)
 			return vc.ReadBuffer(buffer)
 			//}
@@ -172,7 +172,7 @@ func (vc *Conn) ReadBuffer(buffer *buf.Buffer) error {
 			if vc.input == nil && vc.rawInput == nil {
 				vc.readProcess = false
 				vc.ExtendedReader = N.NewExtendedReader(vc.netConn)
-				log.Debugln("XTLS Vision direct read start")
+				log.Debugln("XTLS Vision 开始直接读取")
 			}
 			if needReturn {
 				return nil
@@ -229,14 +229,14 @@ func (vc *Conn) WriteBuffer(buffer *buf.Buffer) (err error) {
 			}
 			if command == commandPaddingDirect {
 				vc.ExtendedWriter = N.NewExtendedWriter(vc.netConn)
-				log.Debugln("XTLS Vision direct write start")
+				log.Debugln("XTLS Vision 开始直接写入")
 				//time.Sleep(5 * time.Millisecond)
 			}
 		}
 		return err
 	}
 	/*if vc.writeDirect {
-		log.Debugln("XTLS Vision Direct write, payloadLen=%d", buffer.Len())
+		log.Debugln("XTLS Vision 直接写入, payloadLen=%d", buffer.Len())
 	}*/
 	return vc.ExtendedWriter.WriteBuffer(buffer)
 }

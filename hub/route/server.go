@@ -168,17 +168,17 @@ func start(cfg *Config) {
 	if len(cfg.Addr) > 0 {
 		l, err := inbound.Listen("tcp", cfg.Addr)
 		if err != nil {
-			log.Errorln("External controller listen error: %s", err)
+			log.Errorln("外部控制器监听失败: %s", err)
 			return
 		}
-		log.Infoln("RESTful API listening at: %s", l.Addr().String())
+		log.Infoln("RESTful API 监听地址: %s", l.Addr().String())
 
 		server := &http.Server{
 			Handler: router(cfg.IsDebug, cfg.Secret, cfg.DohServer, cfg.Cors),
 		}
 		httpServer = server
 		if err = server.Serve(l); err != nil {
-			log.Errorln("External controller serve error: %s", err)
+			log.Errorln("外部控制器服务错误: %s", err)
 		}
 	}
 }
@@ -194,17 +194,17 @@ func startTLS(cfg *Config) {
 	if len(cfg.TLSAddr) > 0 {
 		certLoader, err := ca.NewTLSKeyPairLoader(cfg.Certificate, cfg.PrivateKey)
 		if err != nil {
-			log.Errorln("External controller tls listen error: %s", err)
+			log.Errorln("外部控制器 TLS 监听失败: %s", err)
 			return
 		}
 
 		l, err := inbound.Listen("tcp", cfg.TLSAddr)
 		if err != nil {
-			log.Errorln("External controller tls listen error: %s", err)
+			log.Errorln("外部控制器 TLS 监听失败: %s", err)
 			return
 		}
 
-		log.Infoln("RESTful API tls listening at: %s", l.Addr().String())
+		log.Infoln("RESTful API TLS 监听地址: %s", l.Addr().String())
 		tlsConfig := &tls.Config{Time: ntp.Now}
 		tlsConfig.NextProtos = []string{"h2", "http/1.1"}
 		tlsConfig.GetCertificate = func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -219,7 +219,7 @@ func startTLS(cfg *Config) {
 		if tlsConfig.ClientAuth == tls.VerifyClientCertIfGiven || tlsConfig.ClientAuth == tls.RequireAndVerifyClientCert {
 			pool, err := ca.LoadCertificates(cfg.ClientAuthCert)
 			if err != nil {
-				log.Errorln("External controller tls listen error: %s", err)
+				log.Errorln("外部控制器 TLS 监听失败: %s", err)
 				return
 			}
 			tlsConfig.ClientCAs = pool
@@ -228,7 +228,7 @@ func startTLS(cfg *Config) {
 		if cfg.EchKey != "" {
 			err = ech.LoadECHKey(cfg.EchKey, tlsConfig)
 			if err != nil {
-				log.Errorln("External controller tls serve error: %s", err)
+				log.Errorln("外部控制器 TLS 服务错误: %s", err)
 				return
 			}
 		}
@@ -237,7 +237,7 @@ func startTLS(cfg *Config) {
 		}
 		tlsServer = server
 		if err = server.Serve(tls.NewListener(l, tlsConfig)); err != nil {
-			log.Errorln("External controller tls serve error: %s", err)
+			log.Errorln("外部控制器 TLS 服务错误: %s", err)
 		}
 	}
 }
@@ -256,7 +256,7 @@ func startUnix(cfg *Config) {
 		dir := filepath.Dir(addr)
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
-				log.Errorln("External controller unix listen error: %s", err)
+				log.Errorln("外部控制器 Unix 监听失败: %s", err)
 				return
 			}
 		}
@@ -272,18 +272,18 @@ func startUnix(cfg *Config) {
 
 		l, err := inbound.Listen("unix", addr)
 		if err != nil {
-			log.Errorln("External controller unix listen error: %s", err)
+			log.Errorln("外部控制器 Unix 监听失败: %s", err)
 			return
 		}
 		_ = os.Chmod(addr, 0o666)
-		log.Infoln("RESTful API unix listening at: %s", l.Addr().String())
+		log.Infoln("RESTful API Unix 监听地址: %s", l.Addr().String())
 
 		server := &http.Server{
 			Handler: router(cfg.IsDebug, "", cfg.DohServer, cfg.Cors),
 		}
 		unixServer = server
 		if err = server.Serve(l); err != nil {
-			log.Errorln("External controller unix serve error: %s", err)
+			log.Errorln("外部控制器 Unix 服务错误: %s", err)
 		}
 	}
 }
@@ -298,23 +298,23 @@ func startPipe(cfg *Config) {
 	// handle addr
 	if len(cfg.PipeAddr) > 0 {
 		if !strings.HasPrefix(cfg.PipeAddr, "\\\\.\\pipe\\") { // windows namedpipe must start with "\\.\pipe\"
-			log.Errorln("External controller pipe listen error: windows namedpipe must start with \"\\\\.\\pipe\\\"")
+			log.Errorln("外部控制器管道监听错误: Windows 命名管道必须以 \"\\\\.\\pipe\\\" 开头")
 			return
 		}
 
 		l, err := inbound.ListenNamedPipe(cfg.PipeAddr)
 		if err != nil {
-			log.Errorln("External controller pipe listen error: %s", err)
+			log.Errorln("外部控制器管道监听失败: %s", err)
 			return
 		}
-		log.Infoln("RESTful API pipe listening at: %s", l.Addr().String())
+		log.Infoln("RESTful API 命名管道监听地址: %s", l.Addr().String())
 
 		server := &http.Server{
 			Handler: router(cfg.IsDebug, "", cfg.DohServer, cfg.Cors),
 		}
 		pipeServer = server
 		if err = server.Serve(l); err != nil {
-			log.Errorln("External controller pipe serve error: %s", err)
+			log.Errorln("外部控制器管道服务错误: %s", err)
 		}
 	}
 }

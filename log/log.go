@@ -15,14 +15,35 @@ var (
 	level  = INFO
 )
 
+// chineseTextFormatter 控制台输出：时间、级别为中文标签，消息体由调用方模板决定。
+type chineseTextFormatter struct{}
+
+func (f *chineseTextFormatter) Format(entry *log.Entry) ([]byte, error) {
+	ts := entry.Time.Format("2006-01-02T15:04:05.000000000Z07:00")
+	var lvl string
+	switch entry.Level {
+	case log.DebugLevel:
+		lvl = "调试"
+	case log.InfoLevel:
+		lvl = "信息"
+	case log.WarnLevel:
+		lvl = "警告"
+	case log.ErrorLevel:
+		lvl = "错误"
+	case log.FatalLevel:
+		lvl = "致命"
+	case log.PanicLevel:
+		lvl = "异常"
+	default:
+		lvl = entry.Level.String()
+	}
+	return []byte(fmt.Sprintf("%s [%s] %s\n", ts, lvl, entry.Message)), nil
+}
+
 func init() {
 	log.SetOutput(os.Stdout)
 	log.SetLevel(log.DebugLevel)
-	log.SetFormatter(&log.TextFormatter{
-		FullTimestamp:             true,
-		TimestampFormat:           "2006-01-02T15:04:05.000000000Z07:00",
-		EnvironmentOverrideColors: true,
-	})
+	log.SetFormatter(&chineseTextFormatter{})
 }
 
 type Event struct {

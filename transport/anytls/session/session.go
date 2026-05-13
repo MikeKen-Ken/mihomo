@@ -169,7 +169,7 @@ func (s *Session) OpenStream() (*Stream, error) {
 func (s *Session) recvLoop() error {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorln("[BUG] %v %s", r, string(debug.Stack()))
+			log.Errorln("[缺陷] %v %s", r, string(debug.Stack()))
 		}
 	}()
 	defer s.Close()
@@ -305,7 +305,7 @@ func (s *Session) recvLoop() error {
 						return err
 					}
 					if s.isClient {
-						log.Errorln("[Alert from server] %s", string(buffer))
+						log.Errorln("[来自服务器的告警] %s", string(buffer))
 					}
 					pool.Put(buffer)
 					return nil
@@ -319,9 +319,9 @@ func (s *Session) recvLoop() error {
 					}
 					if s.isClient {
 						if padding.UpdatePaddingScheme(rawScheme, s.padding) {
-							log.Debugln("[Update padding succeed] %x\n", md5.Sum(rawScheme))
+							log.Debugln("[更新 padding 成功] %x\n", md5.Sum(rawScheme))
 						} else {
-							log.Warnln("[Update padding failed] %x\n", md5.Sum(rawScheme))
+							log.Warnln("[更新 padding 失败] %x\n", md5.Sum(rawScheme))
 						}
 					}
 				}

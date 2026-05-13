@@ -113,7 +113,7 @@ func (s *Socks) Listen(tunnel C.Tunnel) error {
 		}
 	}
 
-	log.Infoln("SOCKS[%s] proxy listening at: %s", s.Name(), s.Address())
+	log.Infoln("SOCKS[%s] 代理监听地址: %s", s.Name(), s.Address())
 	return nil
 }
 

@@ -107,7 +107,7 @@ func (v *Trojan) Listen(tunnel C.Tunnel) error {
 	if err != nil {
 		return err
 	}
-	log.Infoln("Trojan[%s] proxy listening at: %s", v.Name(), v.Address())
+	log.Infoln("Trojan[%s] 代理监听地址: %s", v.Name(), v.Address())
 	return nil
 }
 

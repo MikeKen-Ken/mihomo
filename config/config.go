@@ -675,8 +675,8 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 	}
 	config.Listeners = listeners
 
-	log.Infoln("Geodata Loader mode: %s", geodata.LoaderName())
-	log.Infoln("Geosite Matcher implementation: %s", geodata.SiteMatcherName())
+	log.Infoln("GeoData 加载器模式: %s", geodata.LoaderName())
+	log.Infoln("Geosite 匹配器实现: %s", geodata.SiteMatcherName())
 	ruleProviders, err := parseRuleProviders(rawCfg)
 	if err != nil {
 		return nil, err
@@ -737,7 +737,7 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 	}
 
 	elapsedTime := time.Since(startTime) / time.Millisecond
-	log.Debugln("Initial configuration complete, total time: %dms", elapsedTime)
+	log.Debugln("初始配置解析完成，总耗时: %d 毫秒", elapsedTime)
 
 	return config, nil
 }
@@ -1217,7 +1217,7 @@ func parseHosts(cfg *RawConfig) (*trie.DomainTrie[resolver.HostValue], error) {
 	hostValue, _ := resolver.NewHostValueByIPs(
 		[]netip.Addr{netip.AddrFrom4([4]byte{127, 0, 0, 1})})
 	if err := tree.Insert("localhost", hostValue); err != nil {
-		log.Errorln("insert localhost to host error: %s", err.Error())
+		log.Errorln("向 hosts 插入 localhost 失败: %s", err.Error())
 	}
 
 	if len(cfg.Hosts) != 0 {
@@ -1228,7 +1228,7 @@ func parseHosts(cfg *RawConfig) (*trie.DomainTrie[resolver.HostValue], error) {
 			}
 			if len(hosts) == 1 && hosts[0] == "lan" {
 				if addrs, err := net.InterfaceAddrs(); err != nil {
-					log.Errorln("insert lan to host error: %s", err)
+					log.Errorln("向 hosts 插入 lan 失败: %s", err)
 				} else {
 					hosts = make([]string, 0, len(addrs))
 					for _, addr := range addrs {
@@ -1662,7 +1662,7 @@ func parseDNS(rawCfg *RawConfig, ruleProviders map[string]P.RuleProvider) (*DNS,
 			dnsCfg.FallbackDomainFilter = append(dnsCfg.FallbackDomainFilter, matcher)
 		}
 		if len(cfg.FallbackFilter.GeoSite) > 0 {
-			log.Warnln("replace fallback-filter.geosite with nameserver-policy, it will be removed in the future")
+			log.Warnln("请将 fallback-filter.geosite 迁移为 nameserver-policy，旧项未来将被移除")
 			for idx, geoSite := range cfg.FallbackFilter.GeoSite {
 				matcher, err := RC.NewGEOSITE(geoSite, "dns.fallback-filter.geosite")
 				if err != nil {
@@ -1695,7 +1695,7 @@ func parseFakeIPRules(rawRules []string, ruleProviders map[string]P.RuleProvider
 				case P.IPCIDR:
 					return nil, fmt.Errorf("dns.fake-ip-filter[%d] [%s] error: rule-set behavior is %s, must be domain or classical", idx, line, rp.Behavior())
 				case P.Classical:
-					log.Warnln("%s provider is %s, only matching domain rules in fake-ip-filter", rp.Name(), rp.Behavior())
+					log.Warnln("%s 提供者为 %s，在 fake-ip-filter 中仅匹配域名类规则", rp.Name(), rp.Behavior())
 				default:
 				}
 			}
@@ -1860,7 +1860,7 @@ func parseSniffer(snifferRaw RawSniffer, ruleProviders map[string]P.RuleProvider
 	} else {
 		if snifferConfig.Enable && len(snifferRaw.Sniffing) != 0 {
 			// Deprecated: Use Sniff instead
-			log.Warnln("Deprecated: Use Sniff instead")
+			log.Warnln("已弃用: 请改用 Sniff")
 		}
 		globalPorts, err := utils.NewUnsignedRangesFromList[uint16](snifferRaw.Ports)
 		if err != nil {
@@ -2012,7 +2012,7 @@ func parseIPRuleSet(domainSetName string, adapterName string, ruleProviders map[
 		case P.Domain:
 			return nil, fmt.Errorf("rule provider type error, except ipcidr,actual %s", rp.Behavior())
 		case P.Classical:
-			log.Warnln("%s provider is %s, only matching it contain ip rule", rp.Name(), rp.Behavior())
+			log.Warnln("%s 提供者为 %s，仅匹配其中包含 IP 的规则", rp.Name(), rp.Behavior())
 		default:
 		}
 	}
@@ -2027,7 +2027,7 @@ func parseDomainRuleSet(domainSetName string, adapterName string, ruleProviders 
 		case P.IPCIDR:
 			return nil, fmt.Errorf("rule provider type error, except domain,actual %s", rp.Behavior())
 		case P.Classical:
-			log.Warnln("%s provider is %s, only matching it contain domain rule", rp.Name(), rp.Behavior())
+			log.Warnln("%s 提供者为 %s，仅匹配其中包含域名的规则", rp.Name(), rp.Behavior())
 		default:
 		}
 	}

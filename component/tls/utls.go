@@ -49,15 +49,15 @@ func GetFingerprint(clientFingerprint string) (UClientHelloID, bool) {
 
 	if clientFingerprint == "random" {
 		fingerprint := randomFingerprint()
-		log.Debugln("use initial random HelloID:%s", fingerprint.Client)
+		log.Debugln("使用初始随机 HelloID:%s", fingerprint.Client)
 		return fingerprint, true
 	}
 
 	if fingerprint, ok := fingerprints[clientFingerprint]; ok {
-		log.Debugln("use specified fingerprint:%s", fingerprint.Client)
+		log.Debugln("使用指定指纹:%s", fingerprint.Client)
 		return fingerprint, true
 	} else {
-		log.Warnln("wrong clientFingerprint:%s", clientFingerprint)
+		log.Warnln("错误的 clientFingerprint:%s", clientFingerprint)
 		return UClientHelloID{}, false
 	}
 }
@@ -70,10 +70,10 @@ var randomFingerprint = once.OnceValue(func() UClientHelloID {
 		weightedrand.NewChoice("firefox", 1),
 	)
 	initClient := chooser.Pick()
-	log.Debugln("initial random HelloID:%s", initClient)
+	log.Debugln("初始随机 HelloID:%s", initClient)
 	fingerprint, ok := fingerprints[initClient]
 	if !ok {
-		log.Warnln("error in initial random HelloID:%s", initClient)
+		log.Warnln("初始随机 HelloID 出错:%s", initClient)
 	}
 	return fingerprint
 })

@@ -25,7 +25,7 @@ type ObfsWeChatUDPConn struct {
 }
 
 func NewObfsWeChatUDPConn(orig net.PacketConn, obfs obfs.Obfuscator) *ObfsWeChatUDPConn {
-	log.Infoln("new wechat")
+	log.Infoln("新建微信混淆连接")
 	return &ObfsWeChatUDPConn{
 		orig:     orig,
 		obfs:     obfs,

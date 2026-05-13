@@ -81,7 +81,7 @@ func (c *UoTPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 			if discardErr := discardBytes(c.conn, payloadLen); discardErr != nil {
 				return 0, nil, discardErr
 			}
-			log.Debugln("[Sudoku][UoT] discard datagram with invalid address %s: %v", addrStr, err)
+			log.Debugln("[Sudoku][UoT] 丢弃地址无效的数据报 %s: %v", addrStr, err)
 			continue
 		}
 		if _, err := io.ReadFull(c.conn, p[:payloadLen]); err != nil {

@@ -157,10 +157,10 @@ func scavenger(ctx context.Context, ch chan timedSession, config *Config) {
 			for k := range sessionList {
 				s := sessionList[k]
 				if s.session.IsClosed() {
-					log.Debugln("scavenger: session normally closed: %s", s.session.LocalAddr())
+					log.Debugln("清理器: 会话正常关闭: %s", s.session.LocalAddr())
 				} else if time.Now().After(s.expiryDate) {
 					s.session.Close()
-					log.Debugln("scavenger: session closed due to ttl: %s", s.session.LocalAddr())
+					log.Debugln("清理器: 会话因 TTL 关闭: %s", s.session.LocalAddr())
 				} else {
 					newList = append(newList, sessionList[k])
 				}

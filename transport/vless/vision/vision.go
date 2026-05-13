@@ -91,13 +91,13 @@ func NewConn(conn net.Conn, tlsConn net.Conn, userUUID uuid.UUID) (*Conn, error)
 		}
 	}
 	if t == nil || p == nil {
-		log.Warnln("vision: not a valid supported TLS connection: %s", reflect.TypeOf(tlsConn))
+		log.Warnln("vision: 非受支持的 TLS 连接类型: %s", reflect.TypeOf(tlsConn))
 		return nil, fmt.Errorf(`failed to use vision, maybe "tls" is not enable and "encryption" is empty`)
 	}
 
 	if err := checkTLSVersion(tlsConn); err != nil {
 		if errors.Is(err, ErrNotHandshakeComplete) {
-			log.Warnln("vision: TLS connection not handshake complete: %s", reflect.TypeOf(tlsConn))
+			log.Warnln("vision: TLS 握手未完成: %s", reflect.TypeOf(tlsConn))
 		} else {
 			return nil, err
 		}

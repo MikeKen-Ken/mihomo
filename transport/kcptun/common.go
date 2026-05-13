@@ -111,14 +111,14 @@ func (config *Config) FillDefaults() {
 
 	// SMUX Version check
 	if config.SmuxVer > maxSmuxVer {
-		log.Warnln("unsupported smux version: %d", config.SmuxVer)
+		log.Warnln("不支持的 smux 版本: %d", config.SmuxVer)
 		config.SmuxVer = maxSmuxVer
 	}
 
 	// Scavenge parameters check
 	if config.AutoExpire != 0 && config.ScavengeTTL > config.AutoExpire {
-		log.Warnln("WARNING: scavengettl is bigger than autoexpire, connections may race hard to use bandwidth.")
-		log.Warnln("Try limiting scavengettl to a smaller value.")
+		log.Warnln("警告: scavengettl 大于 autoexpire，连接可能激烈争抢带宽。")
+		log.Warnln("建议将 scavengettl 限制为更小的值。")
 	}
 }
 

@@ -76,7 +76,7 @@ func (v *AnyTLS) Listen(tunnel C.Tunnel) error {
 	if err != nil {
 		return err
 	}
-	log.Infoln("AnyTLS[%s] proxy listening at: %s", v.Name(), v.Address())
+	log.Infoln("AnyTLS[%s] 代理监听地址: %s", v.Name(), v.Address())
 	return nil
 }
 

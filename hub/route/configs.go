@@ -438,7 +438,7 @@ func updateConfigs(w http.ResponseWriter, r *http.Request) {
 func updateGeoDatabases(w http.ResponseWriter, r *http.Request) {
 	err := updater.UpdateGeoDatabases()
 	if err != nil {
-		log.Errorln("[GEO] update GEO databases failed: %v", err)
+		log.Errorln("[GEO] 更新 GEO 数据库失败: %v", err)
 		render.Status(r, http.StatusInternalServerError)
 		render.JSON(w, r, newError(err.Error()))
 		return

@@ -160,7 +160,7 @@ func (t *Tun) Listen(tunnel C.Tunnel) error {
 	if err != nil {
 		return err
 	}
-	log.Infoln("Tun[%s] proxy listening at: %s", t.Name(), t.Address())
+	log.Infoln("Tun[%s] 代理监听地址: %s", t.Name(), t.Address())
 	return nil
 }
 

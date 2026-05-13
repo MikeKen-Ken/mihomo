@@ -100,7 +100,7 @@ func (m *Mieru) Listen(tunnel C.Tunnel) error {
 			go mieru.Handle(c, tunnel, req, additions...)
 		}
 	}()
-	log.Infoln("Mieru[%s] proxy listening at: %s", m.Name(), m.Address())
+	log.Infoln("Mieru[%s] 代理监听地址: %s", m.Name(), m.Address())
 	return nil
 }
 

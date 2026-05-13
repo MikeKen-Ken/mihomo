@@ -217,7 +217,7 @@ func NewGEOIP(country string, adapter string, isSrc, noResolveIP bool) (*GEOIP, 
 	}
 
 	if err := geodata.InitGeoIP(); err != nil {
-		log.Errorln("can't initial GeoIP: %s", err)
+		log.Errorln("初始化 GeoIP 失败: %s", err)
 		return nil, err
 	}
 
@@ -226,7 +226,7 @@ func NewGEOIP(country string, adapter string, isSrc, noResolveIP bool) (*GEOIP, 
 		if err != nil {
 			return nil, err
 		}
-		log.Infoln("Finished initial GeoIP rule %s => %s, records: %d", country, adapter, geoIPMatcher.Count())
+		log.Infoln("GeoIP 规则初始化完成 %s => %s，记录数: %d", country, adapter, geoIPMatcher.Count())
 	}
 
 	return geoip, nil

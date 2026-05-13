@@ -45,7 +45,7 @@ func (c *classicalStrategy) Reset() {
 func (c *classicalStrategy) Insert(rule string) {
 	r, err := c.payloadToRule(rule)
 	if err != nil {
-		log.Warnln("parse classical rule [%s] error: %s", rule, err.Error())
+		log.Warnln("解析 classical 规则 [%s] 出错: %s", rule, err.Error())
 	} else {
 		c.rules = append(c.rules, r)
 		c.count++

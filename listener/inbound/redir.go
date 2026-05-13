@@ -58,7 +58,7 @@ func (r *Redir) Listen(tunnel C.Tunnel) error {
 		}
 		r.l = append(r.l, l)
 	}
-	log.Infoln("Redir[%s] proxy listening at: %s", r.Name(), r.Address())
+	log.Infoln("Redir[%s] 代理监听地址: %s", r.Name(), r.Address())
 	return nil
 }
 

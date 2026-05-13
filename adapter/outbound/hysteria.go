@@ -205,7 +205,7 @@ func NewHysteria(option HysteriaOption) (*Hysteria, error) {
 		quicConfig.MaxConnectionReceiveWindow = DefaultConnectionReceiveWindow
 	}
 	if !quicConfig.DisablePathMTUDiscovery && pmtud_fix.DisablePathMTUDiscovery {
-		log.Infoln("hysteria: Path MTU Discovery is not yet supported on this platform")
+		log.Infoln("hysteria: 当前平台尚不支持路径 MTU 发现")
 	}
 
 	var auth = []byte(option.AuthString)

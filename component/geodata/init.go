@@ -92,16 +92,16 @@ func InitGeoSite() error {
 	initGeoSiteMutex.Lock()
 	defer initGeoSiteMutex.Unlock()
 	if _, err := os.Stat(C.Path.GeoSite()); os.IsNotExist(err) {
-		log.Infoln("Can't find GeoSite.dat, start download")
+		log.Infoln("未找到 GeoSite.dat，开始下载")
 		if err := downloadToPath(GeoSiteUrl(), C.Path.GeoSite()); err != nil {
 			return fmt.Errorf("can't download GeoSite.dat: %s", err.Error())
 		}
-		log.Infoln("Download GeoSite.dat finish")
+		log.Infoln("GeoSite.dat 下载完成")
 		initGeoSite = false
 	}
 	if !initGeoSite {
 		if err := Verify(C.GeositeName); err != nil {
-			log.Warnln("GeoSite.dat invalid, remove and download: %s", err)
+			log.Warnln("GeoSite.dat 无效，已删除并重新下载: %s", err)
 			if err := os.Remove(C.Path.GeoSite()); err != nil {
 				return fmt.Errorf("can't remove invalid GeoSite.dat: %s", err.Error())
 			}
@@ -120,17 +120,17 @@ func InitGeoIP() error {
 	defer initGeoIPMutex.Unlock()
 	if GeodataMode() {
 		if _, err := os.Stat(C.Path.GeoIP()); os.IsNotExist(err) {
-			log.Infoln("Can't find GeoIP.dat, start download")
+			log.Infoln("未找到 GeoIP.dat，开始下载")
 			if err := downloadToPath(GeoIpUrl(), C.Path.GeoIP()); err != nil {
 				return fmt.Errorf("can't download GeoIP.dat: %s", err.Error())
 			}
-			log.Infoln("Download GeoIP.dat finish")
+			log.Infoln("GeoIP.dat 下载完成")
 			initGeoIP = 0
 		}
 
 		if initGeoIP != 1 {
 			if err := Verify(C.GeoipName); err != nil {
-				log.Warnln("GeoIP.dat invalid, remove and download: %s", err)
+				log.Warnln("GeoIP.dat 无效，已删除并重新下载: %s", err)
 				if err := os.Remove(C.Path.GeoIP()); err != nil {
 					return fmt.Errorf("can't remove invalid GeoIP.dat: %s", err.Error())
 				}
@@ -144,7 +144,7 @@ func InitGeoIP() error {
 	}
 
 	if _, err := os.Stat(C.Path.MMDB()); os.IsNotExist(err) {
-		log.Infoln("Can't find MMDB, start download")
+		log.Infoln("未找到 MMDB，开始下载")
 		if err := downloadToPath(MmdbUrl(), C.Path.MMDB()); err != nil {
 			return fmt.Errorf("can't download MMDB: %s", err.Error())
 		}
@@ -152,7 +152,7 @@ func InitGeoIP() error {
 
 	if initGeoIP != 2 {
 		if !mmdb.Verify(C.Path.MMDB()) {
-			log.Warnln("MMDB invalid, remove and download")
+			log.Warnln("MMDB 无效，已删除并重新下载")
 			if err := os.Remove(C.Path.MMDB()); err != nil {
 				return fmt.Errorf("can't remove invalid MMDB: %s", err.Error())
 			}
@@ -170,16 +170,16 @@ func InitASN() error {
 	initASNMutex.Lock()
 	defer initASNMutex.Unlock()
 	if _, err := os.Stat(C.Path.ASN()); os.IsNotExist(err) {
-		log.Infoln("Can't find ASN.mmdb, start download")
+		log.Infoln("未找到 ASN.mmdb，开始下载")
 		if err := downloadToPath(ASNUrl(), C.Path.ASN()); err != nil {
 			return fmt.Errorf("can't download ASN.mmdb: %s", err.Error())
 		}
-		log.Infoln("Download ASN.mmdb finish")
+		log.Infoln("ASN.mmdb 下载完成")
 		initASN = false
 	}
 	if !initASN {
 		if !mmdb.Verify(C.Path.ASN()) {
-			log.Warnln("ASN invalid, remove and download")
+			log.Warnln("ASN 数据库无效，已删除并重新下载")
 			if err := os.Remove(C.Path.ASN()); err != nil {
 				return fmt.Errorf("can't remove invalid ASN: %s", err.Error())
 			}

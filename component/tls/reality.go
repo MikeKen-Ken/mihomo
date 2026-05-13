@@ -120,7 +120,7 @@ func GetRealityConn(ctx context.Context, conn net.Conn, fingerprint UClientHello
 			return nil, err
 		}
 
-		log.Debugln("REALITY Authentication: %v, AEAD: %T", verifier.verified, aeadCipher)
+		log.Debugln("REALITY 认证: %v，AEAD: %T", verifier.verified, aeadCipher)
 
 		if !verifier.verified {
 			go realityClientFallback(uConn, uConfig.ServerName, fingerprint)
@@ -169,7 +169,7 @@ type realityVerifier struct {
 }
 
 func (c *realityVerifier) VerifyConnection(state utls.ConnectionState) error {
-	log.Debugln("REALITY localAddr: %v is using X25519MLKEM768 for TLS' communication: %v", c.RemoteAddr(), c.HandshakeState.ServerHello.ServerShare.Group == utls.X25519MLKEM768)
+	log.Debugln("REALITY 本地地址 %v 对 TLS 通信使用 X25519MLKEM768: %v", c.RemoteAddr(), c.HandshakeState.ServerHello.ServerShare.Group == utls.X25519MLKEM768)
 	certs := state.PeerCertificates
 	if pub, ok := certs[0].PublicKey.(ed25519.PublicKey); ok {
 		h := hmac.New(sha512.New, c.authKey)

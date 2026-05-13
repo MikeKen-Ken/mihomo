@@ -92,7 +92,7 @@ func (m *Mixed) Listen(tunnel C.Tunnel) error {
 			m.lUDP = append(m.lUDP, lUDP)
 		}
 	}
-	log.Infoln("Mixed(http+socks)[%s] proxy listening at: %s", m.Name(), m.Address())
+	log.Infoln("Mixed(http+socks)[%s] 代理监听地址: %s", m.Name(), m.Address())
 	return nil
 }
 

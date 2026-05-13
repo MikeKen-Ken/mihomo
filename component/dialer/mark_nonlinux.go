@@ -14,7 +14,7 @@ var printMarkWarnOnce sync.Once
 
 func printMarkWarn() {
 	printMarkWarnOnce.Do(func() {
-		log.Warnln("Routing mark on socket is not supported on current platform")
+		log.Warnln("当前平台不支持套接字路由标记 (routing-mark)")
 	})
 }
 

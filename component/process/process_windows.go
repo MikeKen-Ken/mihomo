@@ -65,8 +65,8 @@ func findProcessName(network string, ip netip.Addr, srcPort int) (uint32, string
 	once.Do(func() {
 		err := initWin32API()
 		if err != nil {
-			log.Errorln("Initialize PROCESS-NAME failed: %s", err.Error())
-			log.Warnln("All PROCESS-NAMES rules will be skipped")
+			log.Errorln("初始化 PROCESS-NAME 失败: %s", err.Error())
+			log.Warnln("所有 PROCESS-NAME 规则将被跳过")
 			return
 		}
 	})

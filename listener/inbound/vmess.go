@@ -96,7 +96,7 @@ func (v *Vmess) Listen(tunnel C.Tunnel) error {
 	if err != nil {
 		return err
 	}
-	log.Infoln("Vmess[%s] proxy listening at: %s", v.Name(), v.Address())
+	log.Infoln("Vmess[%s] 代理监听地址: %s", v.Name(), v.Address())
 	return nil
 }
 

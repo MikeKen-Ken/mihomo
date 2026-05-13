@@ -19,16 +19,16 @@ func (h *ListenerHandler) PrepareConnection(network string, source M.Socksaddr, 
 	switch network {
 	case N.NetworkICMP: // our fork only send those type to PrepareConnection now
 		if h.DisableICMPForwarding || h.skipPingForwardingByAddr(destination.Addr) { // skip if ICMP handling is disabled or other condition
-			log.Infoln("[ICMP] %s %s --> %s using fake ping echo", network, source, destination)
+			log.Infoln("[ICMP] %s %s --> %s 使用伪造 ping 回应", network, source, destination)
 			return nil, nil
 		}
-		log.Infoln("[ICMP] %s %s --> %s using DIRECT", network, source, destination)
+		log.Infoln("[ICMP] %s %s --> %s 使用直连", network, source, destination)
 		directRouteDestination, err := ping.ConnectDestination(context.TODO(), log.SingLogger, dialer.ICMPControl(destination.Addr), destination.Addr, routeContext, timeout)
 		if err != nil {
-			log.Warnln("[ICMP] failed to connect to %s", destination)
+			log.Warnln("[ICMP] 连接 %s 失败", destination)
 			return nil, err
 		}
-		log.Debugln("[ICMP] success connect to %s", destination)
+		log.Debugln("[ICMP] 成功连接 %s", destination)
 		return directRouteDestination, nil
 	}
 	return nil, nil

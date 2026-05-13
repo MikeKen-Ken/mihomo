@@ -120,14 +120,14 @@ func main() {
 		var err error
 		configBytes, err = base64.StdEncoding.DecodeString(configString)
 		if err != nil {
-			log.Fatalln("Initial configuration error: %s", err.Error())
+			log.Fatalln("初始配置错误: %s", err.Error())
 			return
 		}
 	} else if configFile == "-" {
 		var err error
 		configBytes, err = io.ReadAll(os.Stdin)
 		if err != nil {
-			log.Fatalln("Initial configuration error: %s", err.Error())
+			log.Fatalln("初始配置错误: %s", err.Error())
 			return
 		}
 	} else {
@@ -142,7 +142,7 @@ func main() {
 		C.SetConfig(configFile)
 
 		if err := config.Init(C.Path.HomeDir()); err != nil {
-			log.Fatalln("Initial configuration directory error: %s", err.Error())
+			log.Fatalln("初始配置目录错误: %s", err.Error())
 		}
 	}
 
@@ -182,7 +182,7 @@ func main() {
 	}
 
 	if err := hub.Parse(configBytes, options...); err != nil {
-		log.Fatalln("Parse config error: %s", err.Error())
+		log.Fatalln("解析配置错误: %s", err.Error())
 	}
 
 	if updater.GeoAutoUpdate() {
@@ -192,13 +192,13 @@ func main() {
 	if postDown != "" {
 		defer func() {
 			if _, err := cmd.ExecShell(postDown); err != nil {
-				log.Errorln("post-down script error: %s", err.Error())
+				log.Errorln("post-down 脚本错误: %s", err.Error())
 			}
 		}()
 	}
 	if postUp != "" {
 		if _, err := cmd.ExecShell(postUp); err != nil {
-			log.Fatalln("post-up script error: %s", err.Error())
+			log.Fatalln("post-up 脚本错误: %s", err.Error())
 		}
 	}
 
@@ -214,7 +214,7 @@ func main() {
 			return
 		case <-hupSign:
 			if err := hub.Parse(configBytes, options...); err != nil {
-				log.Errorln("Parse config error: %s", err.Error())
+				log.Errorln("解析配置错误: %s", err.Error())
 			}
 		}
 	}

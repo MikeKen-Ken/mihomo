@@ -86,7 +86,7 @@ func (v *TrustTunnel) Listen(tunnel C.Tunnel) error {
 	if err != nil {
 		return err
 	}
-	log.Infoln("TrustTunnel[%s] proxy listening at: %s", v.Name(), v.Address())
+	log.Infoln("TrustTunnel[%s] 代理监听地址: %s", v.Name(), v.Address())
 	return nil
 }
 
