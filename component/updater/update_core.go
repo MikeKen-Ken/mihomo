@@ -24,21 +24,14 @@ import (
 )
 
 const (
-	baseReleaseURL    = "https://github.com/MetaCubeX/mihomo/releases/latest/download/"
-	versionReleaseURL = "https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt"
-
-	baseAlphaURL    = "https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/"
-	versionAlphaURL = "https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/version.txt"
+	// 本 fork 内核在线升级：仅 MikeKen-Ken/mihomo 的 Prerelease-Alpha（与桌面 prebuild 一致）。
+	forkAlphaBaseURL    = "https://github.com/MikeKen-Ken/mihomo/releases/download/Prerelease-Alpha/"
+	forkAlphaVersionURL = "https://github.com/MikeKen-Ken/mihomo/releases/download/Prerelease-Alpha/version.txt"
 
 	// MaxPackageFileSize is a maximum package file length in bytes. The largest
 	// package whose size is limited by this constant currently has the size of
 	// approximately 32 MiB.
 	MaxPackageFileSize = 32 * 1024 * 1024
-)
-
-const (
-	ReleaseChannel = "release"
-	AlphaChannel   = "alpha"
 )
 
 // CoreUpdater is the mihomo updater.
@@ -86,20 +79,10 @@ func (u *CoreUpdater) Update(currentExePath string, channel string, force bool) 
 		return fmt.Errorf("check currentExePath %q: %w", currentExePath, err)
 	}
 
-	baseURL := baseAlphaURL
-	versionURL := versionAlphaURL
-	switch strings.ToLower(channel) {
-	case ReleaseChannel:
-		baseURL = baseReleaseURL
-		versionURL = versionReleaseURL
-	case AlphaChannel:
-		break
-	default: // auto
-		if !strings.HasPrefix(C.Version, "alpha") {
-			baseURL = baseReleaseURL
-			versionURL = versionReleaseURL
-		}
-	}
+	// 外部仍传 release/alpha/auto；本 fork 只维护 Prerelease-Alpha 一套产物，不再按 channel 换源。
+	_ = channel
+	baseURL := forkAlphaBaseURL
+	versionURL := forkAlphaVersionURL
 
 	latestVersion, err := u.getLatestVersion(versionURL)
 	if err != nil {
