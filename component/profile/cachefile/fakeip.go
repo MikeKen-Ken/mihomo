@@ -109,6 +109,9 @@ func (c *FakeIpStore) DelByIP(ip netip.Addr) {
 }
 
 func (c *FakeIpStore) FlushFakeIP() error {
+	if c.DB == nil {
+		return nil
+	}
 	err := c.DB.Batch(func(t *bbolt.Tx) error {
 		bucket := t.Bucket(c.bucketName)
 		if bucket == nil {
