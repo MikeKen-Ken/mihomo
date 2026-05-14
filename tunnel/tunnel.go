@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"path/filepath"
@@ -75,6 +76,7 @@ var (
 	sniffingEnable    = false
 
 	ruleUpdateCallback = utils.NewCallback[P.RuleProvider]()
+	runningCallback    = utils.NewCallback[struct{}]()
 )
 
 const lanDeviceLimitCacheTTL = time.Second
@@ -146,6 +148,13 @@ func OnInnerLoading() {
 
 func OnRunning() {
 	status.Store(Running)
+	runningCallback.Emit(struct{}{})
+}
+
+func RegisterOnRunning(callback func()) io.Closer {
+	return runningCallback.Register(func(struct{}) {
+		callback()
+	})
 }
 
 func Status() TunnelStatus {

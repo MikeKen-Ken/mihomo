@@ -203,6 +203,10 @@ func NewTransport(dialRaw DialRawFunc, wrapTLS WrapTLSFunc, dialQUIC DialQUICFun
 		keepAlivePeriod = 0
 	}
 	// use h2c mode to disallow the net/http fallback to http1.1
+	//
+	// Note that this usage is only applicable to our own net/http fork.
+	// The standard library also needs to mask the tls.Conn type for the conn returned by DialTLSContext,
+	// see: https://github.com/golang/go/issues/79293#issuecomment-4426393534
 	protocols := new(http.Protocols)
 	protocols.SetUnencryptedHTTP2(true)
 	return &http.Transport{
@@ -216,8 +220,7 @@ func NewTransport(dialRaw DialRawFunc, wrapTLS WrapTLSFunc, dialQUIC DialQUICFun
 				_ = raw.Close()
 				return nil, err
 			}
-			type netConn struct{ net.Conn } // hide tls-type to skip ALPN check and force enter h2 mode
-			return netConn{wrapped}, nil
+			return wrapped, nil
 		},
 		IdleConnTimeout: ConnIdleTimeout,
 		Protocols:       protocols,
