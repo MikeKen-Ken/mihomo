@@ -1,6 +1,7 @@
 package cachefile
 
 import (
+	"errors"
 	"net/netip"
 
 	"github.com/metacubex/mihomo/log"
@@ -109,6 +110,10 @@ func (c *FakeIpStore) DelByIP(ip netip.Addr) {
 }
 
 func (c *FakeIpStore) FlushFakeIP() error {
+	if c.DB == nil {
+		log.Warnln("[FakeIPFlush] skip: cache DB is nil (bucket=%q), persisted fake-ip cannot be cleared", string(c.bucketName))
+		return errors.New("fake-ip cache DB unavailable")
+	}
 	err := c.DB.Batch(func(t *bbolt.Tx) error {
 		bucket := t.Bucket(c.bucketName)
 		if bucket == nil {
@@ -116,5 +121,10 @@ func (c *FakeIpStore) FlushFakeIP() error {
 		}
 		return t.DeleteBucket(c.bucketName)
 	})
-	return err
+	if err != nil {
+		log.Warnln("[FakeIPFlush] bbolt flush failed (bucket=%q): %v", string(c.bucketName), err)
+		return err
+	}
+	log.Infoln("[FakeIPFlush] persisted fake-ip bucket flushed (bucket=%q)", string(c.bucketName))
+	return nil
 }
