@@ -59,8 +59,8 @@ func (u *CoreUpdater) CoreBaseName() string {
 		// mihomo-linux-mips-hardfloat
 		return fmt.Sprintf("mihomo-%s-%s-%s", runtime.GOOS, runtime.GOARCH, features.GOMIPS)
 	case "amd64":
-		// mihomo-linux-amd64-v1
-		return fmt.Sprintf("mihomo-%s-%s-%s", runtime.GOOS, runtime.GOARCH, features.GOAMD64)
+		// 与 fork CI 产物一致：zip/gz 为 mihomo-{os}-amd64-{version}，不含 GOAMD64（v1/v3）后缀
+		return fmt.Sprintf("mihomo-%s-%s", runtime.GOOS, runtime.GOARCH)
 	default:
 		// mihomo-linux-386
 		// mihomo-linux-mips64
