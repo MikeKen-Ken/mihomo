@@ -369,39 +369,51 @@ func msgToLogString(msg *D.Msg) string {
 	}
 }
 
+// dnsBatchPickResult 记录并行 DNS 竞速中率先成功应答的上游，便于排查实际使用的解析服务器。
+type dnsBatchPickResult struct {
+	msg    *D.Msg
+	server string
+}
+
 func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.Msg, cache bool, err error) {
 	cache = true
-	fast, ctx := picker.WithTimeout[*D.Msg](ctx, resolver.DefaultDNSTimeout)
+	fast, pickCtx := picker.WithTimeout[dnsBatchPickResult](ctx, resolver.DefaultDNSTimeout)
 	defer fast.Close()
 	domain := msgToDomain(m)
 	_, qTypeStr := msgToQtype(m)
 	for _, client := range clients {
 		if _, isRCodeClient := client.(rcodeClient); isRCodeClient {
-			msg, err = client.ExchangeContext(ctx, m)
+			msg, err = client.ExchangeContext(pickCtx, m)
+			if err == nil && msg != nil {
+				log.Infoln("[DNS] %s (%s) 由上游应答: %s，结果: %s", domain, qTypeStr, client.Address(), msgToLogString(msg))
+			}
 			return msg, false, err
 		}
 		client := client // shadow define client to ensure the value captured by the closure will not be changed in the next loop
-		fast.Go(func() (*D.Msg, error) {
+		fast.Go(func() (dnsBatchPickResult, error) {
 			log.Debugln("[DNS] 解析 %s %s，来自 %s", domain, qTypeStr, client.Address())
-			m, err := client.ExchangeContext(ctx, m)
+			resp, err := client.ExchangeContext(pickCtx, m)
 			if err != nil {
-				return nil, err
-			} else if cache && (m.Rcode == D.RcodeServerFailure || m.Rcode == D.RcodeRefused) {
+				return dnsBatchPickResult{}, err
+			} else if cache && (resp.Rcode == D.RcodeServerFailure || resp.Rcode == D.RcodeRefused) {
 				// currently, cache indicates whether this msg was from a RCode client,
 				// so we would ignore RCode errors from RCode clients.
-				return nil, errors.New("server failure: " + D.RcodeToString[m.Rcode])
+				return dnsBatchPickResult{}, errors.New("server failure: " + D.RcodeToString[resp.Rcode])
 			}
-			log.Debugln("[DNS] %s --> %s，来自 %s", domain, msgToLogString(m), client.Address())
-			return m, nil
+			log.Debugln("[DNS] %s --> %s，来自 %s", domain, msgToLogString(resp), client.Address())
+			return dnsBatchPickResult{msg: resp, server: client.Address()}, nil
 		})
 	}
 
-	msg = fast.Wait()
+	picked := fast.Wait()
+	msg = picked.msg
 	if msg == nil {
 		err = errors.New("all DNS requests failed")
 		if fErr := fast.Error(); fErr != nil {
 			err = fmt.Errorf("%w, first error: %w", err, fErr)
 		}
+	} else {
+		log.Infoln("[DNS] %s (%s) 由上游率先应答: %s，结果: %s", domain, qTypeStr, picked.server, msgToLogString(msg))
 	}
 	return
 }
