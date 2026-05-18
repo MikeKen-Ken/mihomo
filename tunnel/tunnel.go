@@ -784,17 +784,7 @@ func logMetadataErr(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err
 		log.Warnln("[%s] 拨号 %s %s --> %s 错误: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
 	} else {
 		ruleInfo := formatRuleInfo(rule, metadata)
-		dnsAddr := ""
-		if metadata.Host != "" && metadata.DstIP.IsValid() {
-			dnsAddr = net.JoinHostPort(metadata.DstIP.String(), fmt.Sprintf("%d", metadata.DstPort))
-		}
-		if dnsAddr != "" {
-			log.Warnln("[%s] %s --> %s --> %s --> %s，拨号 %s 错误: %s",
-				strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), dnsAddr, ruleInfo, proxy.Name(), err.Error())
-		} else {
-			log.Warnln("[%s] %s --> %s --> %s，拨号 %s 错误: %s",
-				strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), ruleInfo, proxy.Name(), err.Error())
-		}
+		log.Warnln("[%s] %s --> %s --> %s，拨号 %s 错误: %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), ruleInfo, proxy.Name(), err.Error())
 	}
 }
 
@@ -809,17 +799,7 @@ func logMetadata(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
 		log.Infoln("[%s] %s --> %s --> %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
 	case rule != nil:
 		ruleInfo := formatRuleInfo(rule, metadata)
-		dnsAddr := ""
-		if metadata.Host != "" && metadata.DstIP.IsValid() {
-			dnsAddr = net.JoinHostPort(metadata.DstIP.String(), fmt.Sprintf("%d", metadata.DstPort))
-		}
-		if dnsAddr != "" {
-			log.Infoln("[%s] %s --> %s --> %s --> %s --> %s",
-				strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), dnsAddr, ruleInfo, remoteConn.Chains().String())
-		} else {
-			log.Infoln("[%s] %s --> %s --> %s --> %s",
-				strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), ruleInfo, remoteConn.Chains().String())
-		}
+		log.Infoln("[%s] %s --> %s --> %s --> %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), ruleInfo, remoteConn.Chains().String())
 	case mode == Global:
 		log.Infoln("[%s] %s --> %s --> GLOBAL", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
 	case mode == Direct:
@@ -857,10 +837,6 @@ func logMetadataCMFA(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection)
 	process := metadata.Process
 	remoteAddr := metadata.RemoteAddress()
 	chains := remoteConn.Chains().String()
-	dnsAddr := ""
-	if metadata.Host != "" && metadata.DstIP.IsValid() {
-		dnsAddr = net.JoinHostPort(metadata.DstIP.String(), fmt.Sprintf("%d", metadata.DstPort))
-	}
 
 	processPart := ""
 	if process != "" {
@@ -869,50 +845,25 @@ func logMetadataCMFA(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection)
 
 	switch {
 	case metadata.SpecialProxy != "":
-		if dnsAddr != "" {
-			log.Infoln("[%s] %s%s --> %s --> %s --> %s --> %s",
-				network, sourceAddr, processPart, remoteAddr, dnsAddr, metadata.SpecialProxy, chains)
-		} else {
-			log.Infoln("[%s] %s%s --> %s --> %s --> %s",
-				network, sourceAddr, processPart, remoteAddr, metadata.SpecialProxy, chains)
-		}
+		log.Infoln("[%s] %s%s --> %s --> %s --> %s",
+			network, sourceAddr, processPart, remoteAddr, metadata.SpecialProxy, chains)
 	case rule != nil:
 		ruleType, ruleDetail := formatRuleInfoCMFA(rule, metadata)
 		ruleDetailPart := ""
 		if ruleDetail != "" {
 			ruleDetailPart = fmt.Sprintf(" --> %s", ruleDetail)
 		}
-		if dnsAddr != "" {
-			log.Infoln("[%s] %s%s --> %s --> %s --> %s%s --> %s",
-				network, sourceAddr, processPart, remoteAddr, dnsAddr, ruleType, ruleDetailPart, chains)
-		} else {
-			log.Infoln("[%s] %s%s --> %s --> %s%s --> %s",
-				network, sourceAddr, processPart, remoteAddr, ruleType, ruleDetailPart, chains)
-		}
+		log.Infoln("[%s] %s%s --> %s --> %s%s --> %s",
+			network, sourceAddr, processPart, remoteAddr, ruleType, ruleDetailPart, chains)
 	case mode == Global:
-		if dnsAddr != "" {
-			log.Infoln("[%s] %s%s --> %s --> %s --> 全局 --> %s",
-				network, sourceAddr, processPart, remoteAddr, dnsAddr, chains)
-		} else {
-			log.Infoln("[%s] %s%s --> %s --> 全局 --> %s",
-				network, sourceAddr, processPart, remoteAddr, chains)
-		}
+		log.Infoln("[%s] %s%s --> %s --> 全局 --> %s",
+			network, sourceAddr, processPart, remoteAddr, chains)
 	case mode == Direct:
-		if dnsAddr != "" {
-			log.Infoln("[%s] %s%s --> %s --> %s --> 直连 --> %s",
-				network, sourceAddr, processPart, remoteAddr, dnsAddr, chains)
-		} else {
-			log.Infoln("[%s] %s%s --> %s --> 直连 --> %s",
-				network, sourceAddr, processPart, remoteAddr, chains)
-		}
+		log.Infoln("[%s] %s%s --> %s --> 直连 --> %s",
+			network, sourceAddr, processPart, remoteAddr, chains)
 	default:
-		if dnsAddr != "" {
-			log.Infoln("[%s] %s%s --> %s --> %s --> 无匹配 --> %s",
-				network, sourceAddr, processPart, remoteAddr, dnsAddr, chains)
-		} else {
-			log.Infoln("[%s] %s%s --> %s --> 无匹配 --> %s",
-				network, sourceAddr, processPart, remoteAddr, chains)
-		}
+		log.Infoln("[%s] %s%s --> %s --> 无匹配 --> %s",
+			network, sourceAddr, processPart, remoteAddr, chains)
 	}
 }
 
