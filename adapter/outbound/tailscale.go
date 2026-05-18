@@ -1,4 +1,4 @@
-//go:build !no_tailscale
+//go:build with_gvisor && !no_tailscale
 
 package outbound
 
@@ -6,23 +6,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/netip"
+	"runtime"
 	"sync"
 	"time"
 
-	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/component/ca"
 	"github.com/metacubex/mihomo/component/dialer"
+	"github.com/metacubex/mihomo/component/iface/anet"
 	"github.com/metacubex/mihomo/component/resolver"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/dns"
 	"github.com/metacubex/mihomo/log"
-	"github.com/metacubex/mihomo/tunnel"
 
 	"github.com/metacubex/tailscale/envknob"
+	"github.com/metacubex/tailscale/hostinfo"
 	"github.com/metacubex/tailscale/ipn"
+	"github.com/metacubex/tailscale/net/netmon"
+	"github.com/metacubex/tailscale/tailcfg"
 	"github.com/metacubex/tailscale/tsnet"
 	D "github.com/miekg/dns"
 )
@@ -41,7 +43,8 @@ type Tailscale struct {
 	backendInitCh   chan struct{}
 	backendInitErr  error
 
-	startHook             io.Closer
+	serverStarted bool
+
 	unregisterDNSResolver func()
 }
 
@@ -60,8 +63,33 @@ type TailscaleOption struct {
 	ExitNodeAllowLANAccess *bool  `proxy:"exit-node-allow-lan-access,omitempty"`
 }
 
-func NewTailscale(option TailscaleOption) (*Tailscale, error) {
+func init() {
+	hostinfo.RegisterHostinfoNewHook(func(hi *tailcfg.Hostinfo) {
+		hi.IPNVersion = C.MihomoName + " " + C.Version
+	})
 	envknob.SetNoLogsNoSupport()
+	if runtime.GOOS == "android" { // Android SDK 30 no longer permits Go's net.Interfaces to work (Issue 2293)
+		netmon.RegisterInterfaceGetter(func() (nif []netmon.Interface, err error) {
+			ifaces, err := anet.Interfaces()
+			if err != nil {
+				return nil, err
+			}
+			for _, iff := range ifaces {
+				addrs, err := anet.InterfaceAddrsByInterface(&iff)
+				if err != nil {
+					continue
+				}
+				nif = append(nif, netmon.Interface{
+					Interface: &iff,
+					AltAddrs:  addrs,
+				})
+			}
+			return
+		})
+	}
+}
+
+func NewTailscale(option TailscaleOption) (*Tailscale, error) {
 	if _, err := buildTailscaleMaskedPrefs(option); err != nil {
 		return nil, err
 	}
@@ -102,7 +130,7 @@ func NewTailscale(option TailscaleOption) (*Tailscale, error) {
 		ControlURL:           option.ControlURL,
 		Ephemeral:            option.Ephemeral,
 		SystemDialer:         outbound.dialer.DialContext,
-		SystemPacketListener: tailscalePacketListener{dialer: outbound.dialer},
+		SystemPacketListener: tailscalePacketListener{dialer: outbound.dialer}.ListenPacket,
 		ExtraRootCAs:         ca.GetCertPool(),
 		LookupHook:           tailscaleLookupHook,
 		UserLogf: func(format string, args ...any) {
@@ -115,14 +143,7 @@ func NewTailscale(option TailscaleOption) (*Tailscale, error) {
 	dnsTransport := tailscaleDNSTransport{tailscale: outbound}
 	outbound.dnsResolver = dns.NewResolverFromClient(dnsTransport)
 	outbound.unregisterDNSResolver = dns.RegisterTailscaleDnsClient(option.Name, dnsTransport)
-	outbound.startHook = tunnel.RegisterOnRunning(outbound.startOnRunning)
 	return outbound, nil
-}
-
-func (t *Tailscale) startOnRunning() {
-	if err := t.start(); err != nil {
-		log.Warnln("[Tailscale](%s) start failed: %v", t.Name(), err)
-	}
 }
 
 func (t *Tailscale) start() error {
@@ -132,6 +153,7 @@ func (t *Tailscale) start() error {
 			t.setBackendInitialized(err)
 			return
 		}
+		t.serverStarted = true
 		ctx, cancel := context.WithTimeout(t.ctx, 30*time.Second)
 		defer cancel()
 		if err := t.applyPrefs(ctx); err != nil {
@@ -295,13 +317,27 @@ func (t *Tailscale) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.
 	if err = t.ensureStarted(ctx); err != nil {
 		return nil, err
 	}
+	netStack, err := t.server.Netstack(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v4, v6 := t.server.TailscaleIPs()
 	options := t.DialOptions()
 	options = append(options, dialer.WithResolver(t.dnsResolver))
 	options = append(options, dialer.WithNetDialer(dialer.NetDialerFunc(func(ctx context.Context, network, address string) (net.Conn, error) {
-		if err = t.checkTailscaleRoute(ctx, network, address); err != nil {
+		dst, err := netip.ParseAddrPort(address) // the dialer will resolve the domain to ip
+		if err != nil {
 			return nil, err
 		}
-		return t.server.Dial(ctx, network, address)
+		src := v4
+		if dst.Addr().Is6() {
+			src = v6
+		}
+		tcpConn, err := netStack.DialContextTCPWithBind(ctx, src, dst)
+		if err != nil {
+			return nil, err
+		}
+		return tcpConn, nil
 	})))
 	var conn net.Conn
 	conn, err = dialer.NewDialer(options...).DialContext(ctx, "tcp", metadata.RemoteAddress())
@@ -321,19 +357,19 @@ func (t *Tailscale) ListenPacketContext(ctx context.Context, metadata *C.Metadat
 	if err = t.ResolveUDP(ctx, metadata); err != nil {
 		return nil, err
 	}
-	address := metadata.AddrPort().String()
-	if err = t.checkTailscaleRoute(ctx, "udp", address); err != nil {
-		return nil, err
+	v4, v6 := t.server.TailscaleIPs()
+	src := v4
+	if metadata.DstIP.Is6() {
+		src = v6
 	}
-	conn, err := t.server.Dial(ctx, "udp", address)
+	pc, err := t.server.ListenPacket("udp", net.JoinHostPort(src.String(), "0"))
 	if err != nil {
 		return nil, err
 	}
-	if conn == nil {
-		return nil, errors.New("packet conn is nil")
+	if pc == nil {
+		return nil, errors.New("packetConn is nil")
 	}
-	rAddr := metadata.UDPAddr()
-	return newPacketConn(N.NewThreadSafePacketConn(&tailscaleConnPacketConn{Conn: conn, rAddr: rAddr}), t), nil
+	return newPacketConn(pc, t), nil
 }
 
 func (t *Tailscale) ResolveUDP(ctx context.Context, metadata *C.Metadata) error {
@@ -343,17 +379,6 @@ func (t *Tailscale) ResolveUDP(ctx context.Context, metadata *C.Metadata) error 
 			return fmt.Errorf("can't resolve ip: %w", err)
 		}
 		metadata.DstIP = ip
-	}
-	return nil
-}
-
-func (t *Tailscale) checkTailscaleRoute(ctx context.Context, network, address string) error {
-	ipp, viaTailscale, err := t.server.DialPlan(ctx, network, address)
-	if err != nil {
-		return err
-	}
-	if !viaTailscale {
-		return fmt.Errorf("destination %s is not routed by Tailscale; configure exit-node or accept an advertised subnet route", ipp)
 	}
 	return nil
 }
@@ -408,21 +433,16 @@ func (t *Tailscale) IsL3Protocol(metadata *C.Metadata) bool {
 
 func (t *Tailscale) Close() error {
 	t.cancel()
-	if t.startHook != nil {
-		_ = t.startHook.Close()
-	}
 	if t.unregisterDNSResolver != nil {
 		t.unregisterDNSResolver()
 	}
-	if t.server != nil {
+	t.startOnce.Do(func() {
+		t.startErr = errors.New("tailscale outbound closed")
+	})
+	if t.server != nil && t.serverStarted { // tsnet.Server.Close() must not be called before or concurrently with Start.
 		return t.server.Close()
 	}
 	return nil
-}
-
-type tailscaleConnPacketConn struct {
-	net.Conn
-	rAddr net.Addr
 }
 
 type tailscalePacketListener struct {
@@ -431,32 +451,4 @@ type tailscalePacketListener struct {
 
 func (l tailscalePacketListener) ListenPacket(ctx context.Context, network, address string) (net.PacketConn, error) {
 	return l.dialer.ListenPacket(ctx, network, address, netip.AddrPort{})
-}
-
-func (c *tailscaleConnPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
-	n, err := c.Conn.Read(b)
-	return n, c.rAddr, err
-}
-
-func (c *tailscaleConnPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
-	return c.Conn.Write(b)
-}
-
-func (c *tailscaleConnPacketConn) LocalAddr() net.Addr {
-	if addr := c.Conn.LocalAddr(); addr != nil {
-		return addr
-	}
-	return &net.UDPAddr{IP: net.IPv4zero, Port: 0}
-}
-
-func (c *tailscaleConnPacketConn) SetDeadline(t time.Time) error {
-	return c.Conn.SetDeadline(t)
-}
-
-func (c *tailscaleConnPacketConn) SetReadDeadline(t time.Time) error {
-	return c.Conn.SetReadDeadline(t)
-}
-
-func (c *tailscaleConnPacketConn) SetWriteDeadline(t time.Time) error {
-	return c.Conn.SetWriteDeadline(t)
 }

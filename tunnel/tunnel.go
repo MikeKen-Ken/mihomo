@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/netip"
 	"path/filepath"
@@ -20,6 +19,7 @@ import (
 	"github.com/metacubex/mihomo/component/loopback"
 	"github.com/metacubex/mihomo/component/nat"
 	"github.com/metacubex/mihomo/component/process"
+	"github.com/metacubex/mihomo/component/proxydialer"
 	"github.com/metacubex/mihomo/component/resolver"
 	"github.com/metacubex/mihomo/component/slowdown"
 	"github.com/metacubex/mihomo/component/sniffer"
@@ -76,7 +76,6 @@ var (
 	sniffingEnable    = false
 
 	ruleUpdateCallback = utils.NewCallback[P.RuleProvider]()
-	runningCallback    = utils.NewCallback[struct{}]()
 )
 
 const lanDeviceLimitCacheTTL = time.Second
@@ -86,6 +85,7 @@ type tunnel struct{}
 var Tunnel = tunnel{}
 var _ C.Tunnel = Tunnel
 var _ P.Tunnel = Tunnel
+var _ proxydialer.Tunnel = Tunnel
 
 func (t tunnel) HandleTCPConn(conn net.Conn, metadata *C.Metadata) {
 	connCtx := icontext.NewConnContext(conn, metadata)
@@ -126,6 +126,10 @@ func (t tunnel) NatTable() C.NatTable {
 	return natTable
 }
 
+func (t tunnel) Proxies() map[string]C.Proxy {
+	return proxies
+}
+
 func (t tunnel) Providers() map[string]P.ProxyProvider {
 	return providers
 }
@@ -148,13 +152,6 @@ func OnInnerLoading() {
 
 func OnRunning() {
 	status.Store(Running)
-	runningCallback.Emit(struct{}{})
-}
-
-func RegisterOnRunning(callback func()) io.Closer {
-	return runningCallback.Register(func(struct{}) {
-		callback()
-	})
 }
 
 func Status() TunnelStatus {
