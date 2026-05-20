@@ -385,7 +385,7 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 		if _, isRCodeClient := client.(rcodeClient); isRCodeClient {
 			msg, err = client.ExchangeContext(pickCtx, m)
 			if err == nil && msg != nil {
-				log.Infoln("[DNS] %s (%s) 由上游应答: %s，结果: %s", domain, qTypeStr, client.Address(), msgToLogString(msg))
+				log.Debugln("[DNS] %s (%s) 由上游应答: %s，结果: %s", domain, qTypeStr, client.Address(), msgToLogString(msg))
 			}
 			return msg, false, err
 		}
@@ -413,7 +413,7 @@ func batchExchange(ctx context.Context, clients []dnsClient, m *D.Msg) (msg *D.M
 			err = fmt.Errorf("%w, first error: %w", err, fErr)
 		}
 	} else {
-		log.Infoln("[DNS] %s (%s) 由上游率先应答: %s，结果: %s", domain, qTypeStr, picked.server, msgToLogString(msg))
+		log.Debugln("[DNS] %s (%s) 由上游率先应答: %s，结果: %s", domain, qTypeStr, picked.server, msgToLogString(msg))
 	}
 	return
 }

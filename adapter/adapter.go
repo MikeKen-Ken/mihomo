@@ -205,9 +205,9 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		}
 
 		if src := C.HealthCheckSourceName(ctx); src != "" {
-			log.Infoln("[%s] 健康检测完成，代理: %s，URL: %s，存活: %t，延迟: %d 毫秒 uid: {%s}", src, p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+			log.Debugln("[%s] 健康检测完成，代理: %s，URL: %s，存活: %t，延迟: %d 毫秒 uid: {%s}", src, p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
 		} else {
-			log.Infoln("健康检测完成，代理: %s，URL: %s，存活: %t，延迟: %d 毫秒 uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+			log.Debugln("健康检测完成，代理: %s，URL: %s，存活: %t，延迟: %d 毫秒 uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
 		}
 	}()
 
