@@ -149,16 +149,12 @@ func getProxyDelay(w http.ResponseWriter, r *http.Request) {
 
 func unfixedProxy(w http.ResponseWriter, r *http.Request) {
 	proxy := r.Context().Value(CtxKeyProxy).(C.Proxy)
-
-	// Selector: 仅取消「手动固定」标记，不改变当前节点名（与 HealthCheck 内 ClearManualSelection 一致）
-	if proxy.Type() == C.Selector {
-		if clearable, ok := proxy.Adapter().(outboundgroup.ClearManualSelectionAble); ok {
-			clearable.ClearManualSelection()
-			render.NoContent(w, r)
-			return
-		}
+	if clearable, ok := proxy.Adapter().(outboundgroup.ClearManualSelectionAble); ok {
+		clearable.ClearManualSelection()
+		cachefile.Cache().SetSelected(proxy.Name(), "")
+		render.NoContent(w, r)
+		return
 	}
-
 	if selectAble, ok := proxy.Adapter().(outboundgroup.SelectAble); ok && proxy.Type() != C.Selector {
 		selectAble.ForceSet("")
 		cachefile.Cache().SetSelected(proxy.Name(), "")
