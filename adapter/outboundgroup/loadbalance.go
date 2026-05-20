@@ -92,7 +92,7 @@ func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c
 	if err == nil {
 		c.AppendToChains(lb)
 	} else {
-		lb.onDialFailed(ctx, proxy.Type(), err, lb.healthCheck)
+		lb.onDialFailed(ctx, proxy.Type(), err, proxy, lb.testUrl, lb.expectedStatus, lb.healthCheck)
 	}
 
 	if needHandshake {
@@ -100,12 +100,12 @@ func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c
 			if err == nil {
 				lb.onDialSuccess()
 			} else {
-				lb.onDialFailed(ctx, proxy.Type(), err, lb.healthCheck)
+				lb.onDialFailed(ctx, proxy.Type(), err, proxy, lb.testUrl, lb.expectedStatus, lb.healthCheck)
 			}
 		})
 	}
 	if err == nil {
-		c = lb.observePostConnectFailure(ctx, c, proxy.Type(), needHandshake, lb.healthCheck)
+		c = lb.observePostConnectFailure(ctx, c, proxy.Type(), proxy, lb.testUrl, lb.expectedStatus, needHandshake, lb.healthCheck)
 	}
 
 	return

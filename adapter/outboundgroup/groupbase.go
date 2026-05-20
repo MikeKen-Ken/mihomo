@@ -291,12 +291,26 @@ func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedSta
 		log.Debugln("代理组 %s：max-connect-times 计数未达冷却阈值，count=%d/%d", gb.Name(), currentConnectTimes, gb.maxConnectTimes)
 		return
 	}
-	if !gb.connectTesting.CompareAndSwap(false, true) {
-		return
-	}
 	gb.connectTestMux.Lock()
 	gb.lastConnectTestAt = time.Now()
 	gb.connectTestMux.Unlock()
+
+	gb.scheduleCurrentProxyPreHealthCheck(proxy, testURL, expectedStatus, "max-connect-times", true, fn)
+}
+
+// scheduleCurrentProxyPreHealthCheck 对当前节点 URL 测速两次，均失败才执行 fn（健康检查）。
+// trigger 用于日志区分 max-connect-times / max-failed-times；notifyUI 仅 max-connect-times 通知客户端。
+func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, expectedStatus, trigger string, notifyUI bool, fn func()) {
+	if fn == nil {
+		return
+	}
+	if proxy == nil || testURL == "" {
+		fn()
+		return
+	}
+	if !gb.connectTesting.CompareAndSwap(false, true) {
+		return
+	}
 
 	go func() {
 		defer gb.connectTesting.Store(false)
@@ -308,7 +322,8 @@ func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedSta
 
 		status, err := utils.NewUnsignedRanges[uint16](expectedStatus)
 		if err != nil {
-			log.Debugln("代理组 %s：跳过 max-connect-times 测试: %v", gb.Name(), err)
+			log.Debugln("代理组 %s：跳过 %s 预检: %v", gb.Name(), trigger, err)
+			fn()
 			return
 		}
 
@@ -320,30 +335,39 @@ func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedSta
 			return proxy.URLTest(ctx, testURL, status)
 		}
 
-		log.Warnln("[应用] max-connect-times 检测启动\tgroup=%s\tproxy=%s\tthreshold=%d\ttimeoutMs=%d", gb.Name(), proxy.Name(), gb.maxConnectTimes, timeoutMs)
-		notifyMaxConnectTimesTestTriggered(gb.Name(), proxy.Name())
+		log.Warnln("[应用] %s 检测启动\tgroup=%s\tproxy=%s\ttimeoutMs=%d", trigger, gb.Name(), proxy.Name(), timeoutMs)
+		if notifyUI {
+			notifyMaxConnectTimesTestTriggered(gb.Name(), proxy.Name())
+		}
 
 		delay, testErr := runURLTest()
 		if testErr == nil {
-			log.Warnln("[应用] max-connect-times 检测结果\t%s\t%s\t成功\t%d", gb.Name(), proxy.Name(), delay)
+			log.Warnln("[应用] %s 检测结果\t%s\t%s\t成功\t%d", trigger, gb.Name(), proxy.Name(), delay)
+			gb.resetFailedTimesAfterPreCheckSuccess()
 			return
 		}
 
-		log.Warnln("[应用] max-connect-times 检测结果\t%s\t%s\t失败\t%v", gb.Name(), proxy.Name(), testErr)
-		log.Debugln("代理组 %s 当前代理 %s max-connect-times 检测失败: %v", gb.Name(), proxy.Name(), testErr)
-		log.Warnln("[应用] max-connect-times 重试\tgroup=%s\tproxy=%s\treason=首次检测失败", gb.Name(), proxy.Name())
+		log.Warnln("[应用] %s 检测结果\t%s\t%s\t失败\t%v", trigger, gb.Name(), proxy.Name(), testErr)
+		log.Warnln("[应用] %s 重试\tgroup=%s\tproxy=%s\treason=首次检测失败", trigger, gb.Name(), proxy.Name())
 
 		retryDelay, retryErr := runURLTest()
 		if retryErr == nil {
-			log.Warnln("[应用] max-connect-times 检测结果\t%s\t%s\t成功\t%d", gb.Name(), proxy.Name(), retryDelay)
+			log.Warnln("[应用] %s 检测结果\t%s\t%s\t成功\t%d", trigger, gb.Name(), proxy.Name(), retryDelay)
+			gb.resetFailedTimesAfterPreCheckSuccess()
 			return
 		}
 
-		log.Warnln("[应用] max-connect-times 检测结果\t%s\t%s\t失败\t%v", gb.Name(), proxy.Name(), retryErr)
-		log.Warnln("[应用] max-connect-times 触发健康检测\tgroup=%s\tproxy=%s\treason=重试仍失败", gb.Name(), proxy.Name())
-		log.Infoln("代理组 %s 当前代理 %s 连续两次 max-connect-times 检测失败，触发健康检测", gb.Name(), proxy.Name())
+		log.Warnln("[应用] %s 检测结果\t%s\t%s\t失败\t%v", trigger, gb.Name(), proxy.Name(), retryErr)
+		log.Warnln("[应用] %s 触发健康检测\tgroup=%s\tproxy=%s\treason=重试仍失败", trigger, gb.Name(), proxy.Name())
+		log.Infoln("代理组 %s 当前代理 %s 连续两次 %s 预检失败，触发健康检测", gb.Name(), proxy.Name(), trigger)
 		fn()
 	}()
+}
+
+func (gb *GroupBase) resetFailedTimesAfterPreCheckSuccess() {
+	gb.failedTestMux.Lock()
+	gb.failedTimes = 0
+	gb.failedTestMux.Unlock()
 }
 
 func (gb *GroupBase) resetConnectTimes() {
@@ -408,7 +432,7 @@ func (gb *GroupBase) shouldSuppressDialFailureStats(ctx context.Context) bool {
 	return C.SuppressGroupOutboundFailureStats(ctx)
 }
 
-func (gb *GroupBase) onDialFailed(ctx context.Context, adapterType C.AdapterType, err error, fn func()) {
+func (gb *GroupBase) onDialFailed(ctx context.Context, adapterType C.AdapterType, err error, proxy C.Proxy, testURL, expectedStatus string, fn func()) {
 	if adapterType == C.Direct || adapterType == C.Compatible || adapterType == C.Reject || adapterType == C.Pass || adapterType == C.RejectDrop {
 		return
 	}
@@ -421,40 +445,48 @@ func (gb *GroupBase) onDialFailed(ctx context.Context, adapterType C.AdapterType
 		if gb.shouldSuppressDialFailureStats(ctx) {
 			return
 		}
+
+		shouldPreCheck := false
 		if strings.Contains(err.Error(), "connection refused") {
-			log.Warnln("[应用] max-failed-times 触发健康检测\tgroup=%s\treason=连接被拒绝", gb.Name())
-			fn()
+			log.Warnln("[应用] max-failed-times 达阈值\tgroup=%s\treason=连接被拒绝", gb.Name())
+			shouldPreCheck = true
+		} else {
+			gb.failedTestMux.Lock()
+			gb.failedTimes++
+			if gb.failedTimes == 1 {
+				log.Debugln("代理组 %s 首次失败", gb.Name())
+				gb.failedTime = time.Now()
+				log.Warnln("[应用] max-failed-times 更新\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
+				if gb.failedTimes >= gb.maxFailedTimes {
+					shouldPreCheck = true
+				}
+			} else {
+				if time.Since(gb.failedTime) > time.Duration(gb.failureResetInterval)*time.Millisecond {
+					log.Warnln("[应用] max-failed-times 重置\tgroup=%s\treason=窗口过期\tcount=%d", gb.Name(), gb.failedTimes)
+					gb.failedTimes = 0
+					gb.failedTestMux.Unlock()
+					return
+				}
+
+				log.Debugln("代理组 %s 失败计数: %d", gb.Name(), gb.failedTimes)
+				log.Warnln("[应用] max-failed-times 更新\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
+				if gb.failedTimes >= gb.maxFailedTimes {
+					shouldPreCheck = true
+				}
+			}
+			gb.failedTestMux.Unlock()
+		}
+
+		if !shouldPreCheck {
 			return
 		}
 
-		gb.failedTestMux.Lock()
-		defer gb.failedTestMux.Unlock()
-
-		gb.failedTimes++
-		if gb.failedTimes == 1 {
-			log.Debugln("代理组 %s 首次失败", gb.Name())
-			gb.failedTime = time.Now()
-			log.Warnln("[应用] max-failed-times 更新\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
-			if gb.failedTimes >= gb.maxFailedTimes {
-				log.Warnln("因 %s 多次失败，启动主动健康检测", gb.Name())
-				log.Warnln("[应用] max-failed-times 触发健康检测\tgroup=%s\tcount=%d\tthreshold=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes)
-				fn()
-			}
-		} else {
-			if time.Since(gb.failedTime) > time.Duration(gb.failureResetInterval)*time.Millisecond {
-				log.Warnln("[应用] max-failed-times 重置\tgroup=%s\treason=窗口过期\tcount=%d", gb.Name(), gb.failedTimes)
-				gb.failedTimes = 0
-				return
-			}
-
-			log.Debugln("代理组 %s 失败计数: %d", gb.Name(), gb.failedTimes)
-			log.Warnln("[应用] max-failed-times 更新\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
-			if gb.failedTimes >= gb.maxFailedTimes {
-				log.Warnln("因 %s 多次失败，激活健康检测", gb.Name())
-				log.Warnln("[应用] max-failed-times 触发健康检测\tgroup=%s\tcount=%d\tthreshold=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes)
-				fn()
-			}
+		proxyName := ""
+		if proxy != nil {
+			proxyName = proxy.Name()
 		}
+		log.Warnln("[应用] max-failed-times 启动预检\tgroup=%s\tproxy=%s", gb.Name(), proxyName)
+		gb.scheduleCurrentProxyPreHealthCheck(proxy, testURL, expectedStatus, "max-failed-times", false, fn)
 	}()
 }
 
@@ -579,12 +611,12 @@ func (c *postConnectFailureConn) shouldNotifyWrite() bool {
 	return true
 }
 
-func (gb *GroupBase) observePostConnectFailure(ctx context.Context, c C.Conn, adapterType C.AdapterType, skipFirstWrite bool, fn func()) C.Conn {
+func (gb *GroupBase) observePostConnectFailure(ctx context.Context, c C.Conn, adapterType C.AdapterType, proxy C.Proxy, testURL, expectedStatus string, skipFirstWrite bool, fn func()) C.Conn {
 	return &postConnectFailureConn{
 		Conn:           c,
 		skipFirstWrite: skipFirstWrite,
 		callback: func(err error) {
-			gb.onDialFailed(ctx, adapterType, err, fn)
+			gb.onDialFailed(ctx, adapterType, err, proxy, testURL, expectedStatus, fn)
 		},
 	}
 }
