@@ -168,9 +168,9 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 	var satisfied bool
 	uid := utils.NewUUIDV4().String()
 	if src := C.HealthCheckSourceName(ctx); src != "" {
-		log.Infoln("[%s] 健康检测中，代理: %s，URL: %s，id: {%s}", src, p.Name(), url, uid)
+		log.Debugln("[%s] 健康检测中，代理: %s，URL: %s，id: {%s}", src, p.Name(), url, uid)
 	} else {
-		log.Infoln("健康检测中，代理: %s，URL: %s，id: {%s}", p.Name(), url, uid)
+		log.Debugln("健康检测中，代理: %s，URL: %s，id: {%s}", p.Name(), url, uid)
 	}
 
 	defer func() {
