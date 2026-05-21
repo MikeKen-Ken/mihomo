@@ -83,6 +83,22 @@ func (c *FakeIpStore) PutByIP(ip netip.Addr, host string) {
 	}
 }
 
+func (c *FakeIpStore) DeleteByHost(host string) {
+	if c.DB == nil {
+		return
+	}
+	err := c.DB.Batch(func(t *bbolt.Tx) error {
+		bucket := t.Bucket(c.bucketName)
+		if bucket == nil {
+			return nil
+		}
+		return bucket.Delete([]byte(host))
+	})
+	if err != nil {
+		log.Warnln("[CacheFile] 删除 Fake-IP 主机映射失败: %s", err.Error())
+	}
+}
+
 func (c *FakeIpStore) DelByIP(ip netip.Addr) {
 	if c.DB == nil {
 		return

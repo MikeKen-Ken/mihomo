@@ -51,6 +51,11 @@ func (m *memoryStore) DelByIP(ip netip.Addr) {
 	m.cacheHost.Delete(ip)
 }
 
+// DeleteByHost implements store.DeleteByHost
+func (m *memoryStore) DeleteByHost(host string) {
+	m.cacheIP.Delete(host)
+}
+
 // Exist implements store.Exist
 func (m *memoryStore) Exist(ip netip.Addr) bool {
 	return m.cacheHost.Exist(ip)

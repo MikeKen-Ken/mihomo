@@ -22,6 +22,7 @@ type store interface {
 	GetByIP(ip netip.Addr) (string, bool)
 	PutByIP(ip netip.Addr, host string)
 	DelByIP(ip netip.Addr)
+	DeleteByHost(host string)
 	Exist(ip netip.Addr) bool
 	CloneTo(store)
 	FlushFakeIP() error
@@ -47,12 +48,27 @@ func (p *Pool) Lookup(host string) netip.Addr {
 	// RFC4343: DNS Case Insensitive, we SHOULD return result with all cases.
 	host = strings.ToLower(host)
 	if ip, exist := p.store.GetByHost(host); exist {
-		return ip
+		if back, ok := p.store.GetByIP(ip); ok && strings.EqualFold(back, host) {
+			return ip
+		}
+		p.dropStaleMapping(host, ip)
 	}
 
 	ip := p.get(host)
 	p.store.PutByHost(host, ip)
 	return ip
+}
+
+// dropStaleMapping removes inconsistent host<->ip entries before re-allocation.
+func (p *Pool) dropStaleMapping(host string, ip netip.Addr) {
+	if back, ok := p.store.GetByIP(ip); ok {
+		p.store.DelByIP(ip)
+		if !strings.EqualFold(back, host) {
+			p.store.DeleteByHost(host)
+		}
+		return
+	}
+	p.store.DeleteByHost(host)
 }
 
 // LookBack return host with the fake ip

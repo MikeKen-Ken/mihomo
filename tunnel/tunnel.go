@@ -432,6 +432,7 @@ func preHandleMetadata(metadata *C.Metadata) error {
 				metadata.Host = node.Domain
 			}
 		} else if resolver.IsFakeIP(metadata.DstIP) {
+			resolver.OnFakeIPRecordMissing(metadata.DstIP)
 			return fmt.Errorf("fake DNS record %s missing", metadata.DstIP)
 		}
 	} else if node, ok := resolver.DefaultHosts.Search(metadata.Host, true); ok {
@@ -570,7 +571,9 @@ func handleUDPConn(packet C.PacketAdapter) {
 
 	if err := preHandleMetadata(metadata.Clone()); err != nil { // precheck without modify metadata
 		packet.Drop()
-		log.Debugln("[元数据预处理] 错误: %s", err)
+		if !strings.Contains(err.Error(), "fake DNS record") {
+			log.Debugln("[元数据预处理] 错误: %s", err)
+		}
 		return
 	}
 	key := packet.Key()
@@ -664,7 +667,9 @@ func handleTCPConn(connCtx C.ConnContext) {
 
 	preHandleFailed := false
 	if err := preHandleMetadata(metadata); err != nil {
-		log.Debugln("[元数据预处理] 错误: %s", err)
+		if !strings.Contains(err.Error(), "fake DNS record") {
+			log.Debugln("[元数据预处理] 错误: %s", err)
+		}
 		preHandleFailed = true
 	}
 

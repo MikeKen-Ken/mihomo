@@ -71,10 +71,12 @@ func FindHostByIP(ip netip.Addr) (string, bool) {
 }
 
 func FlushFakeIP() error {
+	var err error
 	if mapper := DefaultHostMapper; mapper != nil {
-		return mapper.FlushFakeIP()
+		err = mapper.FlushFakeIP()
 	}
-	return nil
+	ClearCache()
+	return err
 }
 
 func StoreFakePoolState() {

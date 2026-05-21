@@ -281,3 +281,22 @@ func TestPool_FlushMemoryCache(t *testing.T) {
 	assert.NotEqual(t, bar, next)
 	assert.Equal(t, baz, nero)
 }
+
+func TestPool_LookupRepairsStaleForwardMapping(t *testing.T) {
+	ipnet := netip.MustParsePrefix("192.168.0.1/28")
+	pool, _ := New(Options{
+		IPNet: ipnet,
+		Size:  10,
+	})
+
+	ip := pool.Lookup("foo.com")
+	ms := pool.store.(*memoryStore)
+	ms.cacheHost.Delete(ip)
+
+	repaired := pool.Lookup("foo.com")
+	back, exist := pool.LookBack(repaired)
+
+	assert.True(t, exist)
+	assert.Equal(t, "foo.com", back)
+	assert.NotEqual(t, ip, repaired)
+}
