@@ -55,6 +55,26 @@ func snapshotTrackerInfo(info *TrackerInfo) TrackerInfo {
 	return snap
 }
 
+func rejectDedupeKey(info *TrackerInfo) (string, bool) {
+	if info == nil || !chainHasRejectOutbound(info.Chain) {
+		return "", false
+	}
+	target := ""
+	if info.Metadata != nil {
+		target = info.Metadata.Host
+		if target == "" {
+			target = info.Metadata.SrcIP.String()
+		}
+		if target == "" {
+			target = info.Metadata.Process
+		}
+	}
+	if target == "" {
+		return "", false
+	}
+	return target + "|" + info.Rule + "|" + info.RulePayload + "|" + info.RuleDetail, true
+}
+
 func recordRecentClosedIfNeeded(info *TrackerInfo) {
 	if info == nil || !chainHasRejectOutbound(info.Chain) {
 		return
@@ -67,6 +87,14 @@ func recordRecentClosedIfNeeded(info *TrackerInfo) {
 	recentClosed.mu.Lock()
 	defer recentClosed.mu.Unlock()
 	recentClosed.pruneLocked(now)
+	if key, ok := rejectDedupeKey(info); ok {
+		for i := range recentClosed.entries {
+			if existingKey, ok2 := rejectDedupeKey(&recentClosed.entries[i].Info); ok2 && existingKey == key {
+				recentClosed.entries[i] = item
+				return
+			}
+		}
+	}
 	recentClosed.entries = append(recentClosed.entries, item)
 	if len(recentClosed.entries) > recentClosedMaxEntries {
 		recentClosed.entries = recentClosed.entries[len(recentClosed.entries)-recentClosedMaxEntries:]
