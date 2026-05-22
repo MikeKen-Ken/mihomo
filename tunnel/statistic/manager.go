@@ -42,6 +42,9 @@ func (m *Manager) Join(c Tracker) {
 }
 
 func (m *Manager) Leave(c Tracker) {
+	if info := c.Info(); info != nil {
+		recordRecentClosedIfNeeded(info)
+	}
 	m.connections.Delete(c.ID())
 }
 
@@ -192,11 +195,20 @@ func (m *Manager) Snapshot() *Snapshot {
 		connections = append(connections, c.Info())
 		return true
 	})
+	var recentClosed []*RecentClosedSnapshot
+	for _, item := range cloneRecentClosed() {
+		infoCopy := item.Info
+		recentClosed = append(recentClosed, &RecentClosedSnapshot{
+			TrackerInfo: &infoCopy,
+			ClosedAt:    item.ClosedAt.UnixMilli(),
+		})
+	}
 	return &Snapshot{
 		UploadTotal:   m.uploadTotal.Load(),
 		DownloadTotal: m.downloadTotal.Load(),
 		Connections:   connections,
 		Memory:        m.memory,
+		RecentClosed:  recentClosed,
 	}
 }
 
@@ -227,8 +239,15 @@ func (m *Manager) handle() {
 }
 
 type Snapshot struct {
-	DownloadTotal int64          `json:"downloadTotal"`
-	UploadTotal   int64          `json:"uploadTotal"`
-	Connections   []*TrackerInfo `json:"connections"`
-	Memory        uint64         `json:"memory"`
+	DownloadTotal int64                    `json:"downloadTotal"`
+	UploadTotal   int64                    `json:"uploadTotal"`
+	Connections   []*TrackerInfo           `json:"connections"`
+	RecentClosed  []*RecentClosedSnapshot  `json:"recentClosed,omitempty"`
+	Memory        uint64                   `json:"memory"`
+}
+
+// RecentClosedSnapshot is a closed REJECT-family connection for clients that poll slower than connection lifetime.
+type RecentClosedSnapshot struct {
+	*TrackerInfo
+	ClosedAt int64 `json:"closedAt"`
 }
