@@ -87,6 +87,14 @@ func (p *Pool) Exist(ip netip.Addr) bool {
 	return p.store.Exist(ip)
 }
 
+// DelIP removes the host<->ip mapping for the given address if present.
+func (p *Pool) DelIP(ip netip.Addr) {
+	p.mux.Lock()
+	defer p.mux.Unlock()
+
+	p.store.DelByIP(ip)
+}
+
 // Gateway return gateway ip
 func (p *Pool) Gateway() netip.Addr {
 	return p.gateway

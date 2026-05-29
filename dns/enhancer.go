@@ -133,6 +133,19 @@ func (h *ResolverEnhancer) FlushFakeIP() error {
 	return nil
 }
 
+// DeleteFakeIPMapping drops fake-ip pool and enhancer mapping entries for one address only.
+func (h *ResolverEnhancer) DeleteFakeIPMapping(ip netip.Addr) {
+	if pool := h.fakeIPPool; pool != nil && pool.IPNet().Contains(ip) {
+		pool.DelIP(ip)
+	}
+	if pool6 := h.fakeIPPool6; pool6 != nil && pool6.IPNet().Contains(ip) {
+		pool6.DelIP(ip)
+	}
+	if mapping := h.mapping; mapping != nil {
+		mapping.Delete(ip)
+	}
+}
+
 func (h *ResolverEnhancer) PatchFrom(o *ResolverEnhancer) {
 	if h.mapping != nil && o.mapping != nil {
 		o.mapping.CloneTo(h.mapping)
