@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	fakeIPMissThreshold      = 3
-	fakeIPMissWindow         = 0.5 * time.Minute
+	fakeIPMissThreshold      = 6
+	fakeIPMissWindow         = 1 * time.Minute
 	fakeIPAutoRepairCooldown = 60 * time.Second
 	fakeIPWarnCooldown       = time.Minute
 )
