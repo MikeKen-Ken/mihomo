@@ -26,7 +26,6 @@ import (
 	"github.com/metacubex/mihomo/component/resolver"
 	"github.com/metacubex/mihomo/component/resource"
 	"github.com/metacubex/mihomo/component/sniffer"
-	tlsC "github.com/metacubex/mihomo/component/tls"
 	"github.com/metacubex/mihomo/component/trie"
 	"github.com/metacubex/mihomo/component/updater"
 	"github.com/metacubex/mihomo/config"
@@ -166,22 +165,21 @@ func GetGeneral() *config.General {
 			ASN:     geodata.ASNUrl(),
 			GeoSite: geodata.GeoSiteUrl(),
 		},
-		GeoAutoUpdate:           updater.GeoAutoUpdate(),
-		GeoUpdateInterval:       updater.GeoUpdateInterval(),
-		GeodataMode:             geodata.GeodataMode(),
-		GeodataLoader:           geodata.LoaderName(),
-		GeositeMatcher:          geodata.SiteMatcherName(),
-		TCPConcurrent:           dialer.GetTcpConcurrent(),
-		FindProcessMode:         tunnel.FindProcessMode(),
-		Sniffing:                tunnel.IsSniffing(),
-		GlobalClientFingerprint: tlsC.GetGlobalFingerprint(),
-		GlobalUA:                mihomoHttp.UA(),
-		ETagSupport:             resource.ETag(),
-		KeepAliveInterval:       int(keepalive.KeepAliveInterval() / time.Second),
-		KeepAliveIdle:           int(keepalive.KeepAliveIdle() / time.Second),
-		DisableKeepAlive:        keepalive.DisableKeepAlive(),
-		LanMaxDevices:           tunnel.LanMaxDevices(),
-		LanOverLimitAction:      tunnel.LanOverLimitAction(),
+		GeoAutoUpdate:      updater.GeoAutoUpdate(),
+		GeoUpdateInterval:  updater.GeoUpdateInterval(),
+		GeodataMode:        geodata.GeodataMode(),
+		GeodataLoader:      geodata.LoaderName(),
+		GeositeMatcher:     geodata.SiteMatcherName(),
+		TCPConcurrent:      dialer.GetTcpConcurrent(),
+		FindProcessMode:    tunnel.FindProcessMode(),
+		Sniffing:           tunnel.IsSniffing(),
+		GlobalUA:           mihomoHttp.UA(),
+		ETagSupport:        resource.ETag(),
+		KeepAliveInterval:  int(keepalive.KeepAliveInterval() / time.Second),
+		KeepAliveIdle:      int(keepalive.KeepAliveIdle() / time.Second),
+		DisableKeepAlive:   keepalive.DisableKeepAlive(),
+		LanMaxDevices:      tunnel.LanMaxDevices(),
+		LanOverLimitAction: tunnel.LanOverLimitAction(),
 	}
 
 	return general
@@ -282,7 +280,7 @@ func updateDNS(c *config.DNS, generalIPv6 bool) {
 		m.PatchFrom(old.(*dns.ResolverEnhancer))
 	}
 
-	s := dns.NewService(r.Resolver, m)
+	s := dns.NewService(r, m)
 
 	resolver.DefaultResolver = r
 	resolver.DefaultHostMapper = m
@@ -428,11 +426,6 @@ func updateGeneral(general *config.General, logging bool) {
 	geodata.SetASNUrl(general.GeoXUrl.ASN)
 	mihomoHttp.SetUA(general.GlobalUA)
 	resource.SetETag(general.ETagSupport)
-
-	if general.GlobalClientFingerprint != "" {
-		log.Warnln("`global-client-fingerprint` 已弃用，请在各代理上直接设置 `client-fingerprint`")
-	}
-	tlsC.SetGlobalFingerprint(general.GlobalClientFingerprint)
 }
 
 func updateUsers(users []auth.AuthUser) {

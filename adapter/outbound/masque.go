@@ -314,7 +314,7 @@ func (w *Masque) run(ctx context.Context) error {
 			}
 			icmp, err := ipConn.WritePacket(buf[:sizes[0]])
 			if err != nil {
-				if errors.Is(err, net.ErrClosed) {
+				if errors.Is(err, net.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
 					log.Errorln("[Masque](%s) 写入 IP 连接时连接已关闭: %v", w.name, err)
 					return
 				}
@@ -335,8 +335,8 @@ func (w *Masque) run(ctx context.Context) error {
 		for runCtx.Err() == nil {
 			buf, err := ipConn.ReadPacket()
 			if err != nil {
-				if errors.Is(err, net.ErrClosed) {
-					log.Errorln("[Masque](%s) 写入 IP 连接时连接已关闭: %v", w.name, err)
+				if errors.Is(err, net.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
+					log.Errorln("[Masque](%s) 从 IP 连接读取时连接已关闭: %v", w.name, err)
 					return
 				}
 				log.Warnln("[Masque](%s) 从 IP 连接读取出错: %v，继续运行…", w.name, err)

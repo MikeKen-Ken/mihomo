@@ -18,6 +18,7 @@ import (
 	"github.com/metacubex/mihomo/common/orderedmap"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/common/yaml"
+	"github.com/metacubex/mihomo/component/age"
 	"github.com/metacubex/mihomo/component/auth"
 	"github.com/metacubex/mihomo/component/cidr"
 	"github.com/metacubex/mihomo/component/fakeip"
@@ -45,29 +46,28 @@ import (
 // General config
 type General struct {
 	Inbound
-	Mode                    T.TunnelMode            `json:"mode"`
-	UnifiedDelay            bool                    `json:"unified-delay"`
-	LogLevel                log.LogLevel            `json:"log-level"`
-	IPv6                    bool                    `json:"ipv6"`
-	Interface               string                  `json:"interface-name"`
-	RoutingMark             int                     `json:"routing-mark"`
-	GeoXUrl                 GeoXUrl                 `json:"geox-url"`
-	GeoAutoUpdate           bool                    `json:"geo-auto-update"`
-	GeoUpdateInterval       int                     `json:"geo-update-interval"`
-	GeodataMode             bool                    `json:"geodata-mode"`
-	GeodataLoader           string                  `json:"geodata-loader"`
-	GeositeMatcher          string                  `json:"geosite-matcher"`
-	TCPConcurrent           bool                    `json:"tcp-concurrent"`
-	FindProcessMode         process.FindProcessMode `json:"find-process-mode"`
-	Sniffing                bool                    `json:"sniffing"`
-	GlobalClientFingerprint string                  `json:"global-client-fingerprint"`
-	GlobalUA                string                  `json:"global-ua"`
-	ETagSupport             bool                    `json:"etag-support"`
-	KeepAliveIdle           int                     `json:"keep-alive-idle"`
-	KeepAliveInterval       int                     `json:"keep-alive-interval"`
-	DisableKeepAlive        bool                    `json:"disable-keep-alive"`
-	LanMaxDevices           int                     `json:"lan-max-devices"`
-	LanOverLimitAction      string                  `json:"lan-over-limit-action"`
+	Mode               T.TunnelMode            `json:"mode"`
+	UnifiedDelay       bool                    `json:"unified-delay"`
+	LogLevel           log.LogLevel            `json:"log-level"`
+	IPv6               bool                    `json:"ipv6"`
+	Interface          string                  `json:"interface-name"`
+	RoutingMark        int                     `json:"routing-mark"`
+	GeoXUrl            GeoXUrl                 `json:"geox-url"`
+	GeoAutoUpdate      bool                    `json:"geo-auto-update"`
+	GeoUpdateInterval  int                     `json:"geo-update-interval"`
+	GeodataMode        bool                    `json:"geodata-mode"`
+	GeodataLoader      string                  `json:"geodata-loader"`
+	GeositeMatcher     string                  `json:"geosite-matcher"`
+	TCPConcurrent      bool                    `json:"tcp-concurrent"`
+	FindProcessMode    process.FindProcessMode `json:"find-process-mode"`
+	Sniffing           bool                    `json:"sniffing"`
+	GlobalUA           string                  `json:"global-ua"`
+	ETagSupport        bool                    `json:"etag-support"`
+	KeepAliveIdle      int                     `json:"keep-alive-idle"`
+	KeepAliveInterval  int                     `json:"keep-alive-interval"`
+	DisableKeepAlive   bool                    `json:"disable-keep-alive"`
+	LanMaxDevices      int                     `json:"lan-max-devices"`
+	LanOverLimitAction string                  `json:"lan-over-limit-action"`
 }
 
 // Inbound config
@@ -602,6 +602,12 @@ func UnmarshalRawConfig(buf []byte) (*RawConfig, error) {
 	// config with default value
 	rawCfg := DefaultRawConfig()
 
+	// decrypt config
+	buf, err := age.DecryptBytes(buf)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt config error: %w", err)
+	}
+
 	if err := yaml.Unmarshal(buf, rawCfg); err != nil {
 		return nil, err
 	}
@@ -786,6 +792,9 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 	}
 	lanOverLimitAction := strings.ToLower(strings.TrimSpace(cfg.ClashForAndroid.LanOverLimitAction))
 
+	if cfg.GlobalClientFingerprint != "" {
+		log.Errorln("`global-client-fingerprint` 已移除，请在各代理上直接设置 `client-fingerprint`")
+	}
 	return &General{
 		Inbound: Inbound{
 			Port:              cfg.Port,
@@ -815,21 +824,20 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 			ASN:     cfg.GeoXUrl.ASN,
 			GeoSite: cfg.GeoXUrl.GeoSite,
 		},
-		GeoAutoUpdate:           cfg.GeoAutoUpdate,
-		GeoUpdateInterval:       cfg.GeoUpdateInterval,
-		GeodataMode:             cfg.GeodataMode,
-		GeodataLoader:           cfg.GeodataLoader,
-		GeositeMatcher:          cfg.GeositeMatcher,
-		TCPConcurrent:           cfg.TCPConcurrent,
-		FindProcessMode:         cfg.FindProcessMode,
-		GlobalClientFingerprint: cfg.GlobalClientFingerprint,
-		GlobalUA:                cfg.GlobalUA,
-		ETagSupport:             cfg.ETagSupport,
-		KeepAliveIdle:           cfg.KeepAliveIdle,
-		KeepAliveInterval:       cfg.KeepAliveInterval,
-		DisableKeepAlive:        cfg.DisableKeepAlive,
-		LanMaxDevices:           lanMaxDevices,
-		LanOverLimitAction:      lanOverLimitAction,
+		GeoAutoUpdate:      cfg.GeoAutoUpdate,
+		GeoUpdateInterval:  cfg.GeoUpdateInterval,
+		GeodataMode:        cfg.GeodataMode,
+		GeodataLoader:      cfg.GeodataLoader,
+		GeositeMatcher:     cfg.GeositeMatcher,
+		TCPConcurrent:      cfg.TCPConcurrent,
+		FindProcessMode:    cfg.FindProcessMode,
+		GlobalUA:           cfg.GlobalUA,
+		ETagSupport:        cfg.ETagSupport,
+		KeepAliveIdle:      cfg.KeepAliveIdle,
+		KeepAliveInterval:  cfg.KeepAliveInterval,
+		DisableKeepAlive:   cfg.DisableKeepAlive,
+		LanMaxDevices:      lanMaxDevices,
+		LanOverLimitAction: lanOverLimitAction,
 	}, nil
 }
 

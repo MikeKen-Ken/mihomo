@@ -6,10 +6,11 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0
 	github.com/coreos/go-iptables v0.8.0
 	github.com/dlclark/regexp2 v1.12.0
-	github.com/enfein/mieru/v3 v3.31.0
+	github.com/enfein/mieru/v3 v3.33.0
 	github.com/gobwas/ws v1.4.0
 	github.com/gofrs/uuid/v5 v5.4.0
 	github.com/golang/snappy v1.0.0
+	github.com/metacubex/age v0.0.0-20260603010618-28d156b4ea78
 	github.com/metacubex/amneziawg-go v0.0.0-20251104174305-5a0e9f7e361d
 	github.com/metacubex/bart v0.26.0
 	github.com/metacubex/bbolt v0.0.0-20250725135710-010dbbbb7a5b
@@ -30,7 +31,7 @@ require (
 	github.com/metacubex/restls-client-go v0.1.7
 	github.com/metacubex/sing v0.5.7
 	github.com/metacubex/sing-mux v0.3.9
-	github.com/metacubex/sing-quic v0.0.0-20260512151354-8475655be853
+	github.com/metacubex/sing-quic v0.0.0-20260527143057-68e10a6afdc3
 	github.com/metacubex/sing-shadowsocks v0.2.12
 	github.com/metacubex/sing-shadowsocks2 v0.2.7
 	github.com/metacubex/sing-shadowtls v0.0.0-20260517015314-c11c36474edc
@@ -46,6 +47,7 @@ require (
 	github.com/metacubex/wireguard-go v0.0.0-20250820062549-a6cecdd7f57f
 	github.com/mroth/weightedrand/v2 v2.1.0
 	github.com/openacid/low v0.1.21
+	github.com/rasky/go-lzo v0.0.0-20200203143853-96a758eda86e
 	github.com/samber/lo v1.53.0
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
@@ -111,7 +113,7 @@ require (
 	github.com/metacubex/jsonv2 v0.0.0-20260518173308-f4597c22f1df // indirect
 	github.com/metacubex/nftables v0.0.0-20260426003805-208c2c1ba2cb // indirect
 	github.com/metacubex/qpack v0.6.0 // indirect
-	github.com/metacubex/tailscale-wireguard-go v0.0.0-20260520153737-f77f0ebf6dec // indirect
+	github.com/metacubex/tailscale-wireguard-go v0.0.0-20260521124654-e1bf77ef79af // indirect
 	github.com/metacubex/yamux v0.0.0-20250918083631-dd5f17c0be49 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/oasisprotocol/deoxysii v0.0.0-20220228165953-2091330c22b7 // indirect
