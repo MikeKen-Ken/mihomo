@@ -26,6 +26,8 @@ func flushFakeIPPool(w http.ResponseWriter, r *http.Request) {
 }
 
 func flushDnsCache(w http.ResponseWriter, r *http.Request) {
+	// 同时清除缓存并重置 DoH/DoQ/DoT 连接，防止僵死连接导致 singleflight 永久阻塞
 	resolver.ClearCache()
+	resolver.ResetConnection()
 	render.NoContent(w, r)
 }

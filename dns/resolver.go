@@ -185,6 +185,11 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
 func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.Msg, err error) {
 	q := m.Question[0]
 
+	// 记录真实上游解析结果，用于连续失败自愈检测（缓存命中不经过此函数，故计数仅反映上游健康度）
+	defer func() {
+		dnsHealth.recordResult(err == nil)
+	}()
+
 	retryNum := 0
 	retryMax := 3
 	fn := func() (result *D.Msg, err error) {
