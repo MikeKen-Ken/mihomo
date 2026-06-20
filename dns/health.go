@@ -18,8 +18,9 @@ import (
 //  1. 软恢复：短时间内出现连续失败达到阈值时，自动执行 ClearCache + ResetConnection。
 //     ResetConnection 会关闭僵死连接，使 in-flight 请求报错返回，从而删除 singleflight key、
 //     解除阻塞。该过程在核心进程内完成，几乎瞬时、无感知。
-//  2. 升级重启：若软恢复后短时间内再次触发，说明软恢复无效，打印稳定哨兵日志，
-//     由上层（clash-verge-rev / Android）识别后重启核心进程。带冷却防止重启风暴。
+//  2. 升级处理：若软恢复后短时间内再次触发，说明软恢复无效，执行平台相关的升级动作
+//     （见 requestCoreRestart 的 build-tag 实现）：桌面端打印哨兵请求上层重启 sidecar 进程；
+//     Android 为进程内运行、无独立进程可重启，仅记录告警。带冷却防止重启风暴。
 
 const (
 	// 触发自愈的连续失败次数阈值
@@ -33,10 +34,6 @@ const (
 	// 两次升级重启请求之间的最小间隔，防止重启风暴
 	healEscalateCooldown = 5 * time.Minute
 )
-
-// dnsRestartSentinel 是请求上层重启核心进程的稳定标记。
-// 上层通过匹配该 ASCII 子串触发进程级重启；MUST NOT 随意修改字符串内容（与上层解析约定一致）。
-const dnsRestartSentinel = "[APP] dns-stall-unrecoverable request-core-restart"
 
 type healthMonitor struct {
 	mu           sync.Mutex
@@ -101,8 +98,8 @@ func (h *healthMonitor) trigger(now time.Time) {
 		h.lastEscalate = now
 		h.lastHealAt = time.Time{}
 		h.quietUntil = now.Add(healGracePeriod)
-		// 升级：请求上层重启核心进程（ERROR 级别，确保非 silent 日志配置下可送达 stdout）
-		log.Errorln(dnsRestartSentinel)
+		// 升级：软恢复无效，按平台执行升级动作（桌面端请求重启核心进程；Android 仅告警）
+		requestCoreRestart()
 		return
 	}
 
