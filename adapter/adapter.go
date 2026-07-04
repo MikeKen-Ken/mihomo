@@ -17,6 +17,8 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 
+	"cfa/native/delegate"
+
 	"github.com/metacubex/http"
 )
 
@@ -165,6 +167,12 @@ func (p *Proxy) MarshalJSON() ([]byte, error) {
 // implements C.Proxy
 func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (t uint16, err error) {
 	ctx = C.WithSuppressGroupOutboundFailureStats(ctx)
+	timeoutMs := 5000
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 {
+			timeoutMs = int(remaining.Milliseconds())
+		}
+	}
 	var satisfied bool
 	uid := utils.NewUUIDV4().String()
 	if src := C.HealthCheckSourceName(ctx); src != "" {
@@ -209,6 +217,12 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		} else {
 			log.Debugln("健康检测完成，代理: %s，URL: %s，存活: %t，延迟: %d 毫秒 uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
 		}
+
+		delayVal := int(t)
+		if !alive || !satisfied {
+			delayVal = 0
+		}
+		delegate.RecordProxyConnectivityTest(p.Name(), delayVal, timeoutMs)
 	}()
 
 	unifiedDelay := UnifiedDelay.Load()
