@@ -17,8 +17,6 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/log"
 
-	"cfa/native/delegate"
-
 	"github.com/metacubex/http"
 )
 
@@ -222,7 +220,7 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		if !alive || !satisfied {
 			delayVal = 0
 		}
-		delegate.RecordProxyConnectivityTest(p.Name(), delayVal, timeoutMs)
+		recordProxyConnectivityTest(p.Name(), delayVal, timeoutMs)
 	}()
 
 	unifiedDelay := UnifiedDelay.Load()
