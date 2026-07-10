@@ -158,6 +158,15 @@ func Status() TunnelStatus {
 	return status.Load()
 }
 
+// CloseAllConnections 关闭所有已跟踪连接。
+// DNS/Fake-IP 契约变更后应调用，避免旧连接继续使用失效映射。
+func CloseAllConnections() {
+	statistic.DefaultManager.Range(func(c statistic.Tracker) bool {
+		_ = c.Close()
+		return true
+	})
+}
+
 func SetSniffing(b bool) {
 	if snifferDispatcher.Enable() {
 		configMux.Lock()
