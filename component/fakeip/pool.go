@@ -117,7 +117,6 @@ func (p *Pool) CloneFrom(o *Pool) {
 
 func (p *Pool) get(host string) netip.Addr {
 	p.offset = p.offset.Next()
-
 	if !p.offset.Less(p.last) {
 		p.cycle = true
 		p.offset = p.first

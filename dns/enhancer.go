@@ -128,6 +128,9 @@ func (h *ResolverEnhancer) FlushFakeIP() error {
 			errs = append(errs, err)
 		}
 	}
+	if h.mapping != nil {
+		h.mapping.Clear()
+	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}

@@ -76,7 +76,9 @@ func FlushFakeIP() error {
 	if mapper := DefaultHostMapper; mapper != nil {
 		err = mapper.FlushFakeIP()
 	}
+	// 一并清空 DNS 应答缓存，并重置 DoH/DoT/DoQ 连接，避免僵死连接
 	ClearCache()
+	ResetConnection()
 	return err
 }
 

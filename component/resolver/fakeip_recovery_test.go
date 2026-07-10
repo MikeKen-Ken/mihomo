@@ -3,12 +3,12 @@ package resolver
 import (
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 type fakeIPMapperStub struct {
-	deleted []netip.Addr
 }
 
 func (f *fakeIPMapperStub) FakeIPEnabled() bool              { return true }
@@ -20,13 +20,11 @@ func (f *fakeIPMapperStub) FindHostByIP(netip.Addr) (string, bool) {
 	return "", false
 }
 func (f *fakeIPMapperStub) FlushFakeIP() error { return nil }
-func (f *fakeIPMapperStub) DeleteFakeIPMapping(ip netip.Addr) {
-	f.deleted = append(f.deleted, ip)
-}
+func (f *fakeIPMapperStub) DeleteFakeIPMapping(netip.Addr)    {}
 func (f *fakeIPMapperStub) InsertHostByIP(netip.Addr, string) {}
 func (f *fakeIPMapperStub) StoreFakePoolState()               {}
 
-func TestFakeIPRecoveryRepairsSingleIPOnly(t *testing.T) {
+func TestFakeIPRecoveryDoesNotDeleteMissingMapping(t *testing.T) {
 	ip := netip.MustParseAddr("198.18.0.98")
 	stub := &fakeIPMapperStub{}
 
@@ -42,14 +40,11 @@ func TestFakeIPRecoveryRepairsSingleIPOnly(t *testing.T) {
 	for i := 0; i < fakeIPMissThreshold; i++ {
 		tracker.onMiss(ip)
 	}
-
-	assert.Len(t, stub.deleted, 1)
-	assert.Equal(t, ip, stub.deleted[0])
+	assert.NotContains(t, tracker.byIP, ip)
 
 	other := netip.MustParseAddr("198.18.0.21")
-	stub.deleted = nil
 	for i := 0; i < fakeIPMissThreshold-1; i++ {
 		tracker.onMiss(other)
 	}
-	assert.Empty(t, stub.deleted)
+	assert.Equal(t, fakeIPMissThreshold-1, tracker.byIP[other].count)
 }

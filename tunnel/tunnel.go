@@ -569,12 +569,21 @@ func handleUDPConn(packet C.PacketAdapter) {
 	}
 	fixMetadata(metadata) // fix some metadata not set via metadata.SetRemoteAddr or metadata.SetRemoteAddress
 
+	fakeIP := metadata.DstIP
+	fakeIPRecordMissing := false
 	if err := preHandleMetadata(metadata.Clone()); err != nil { // precheck without modify metadata
-		packet.Drop()
 		if !strings.Contains(err.Error(), "fake DNS record") {
+			packet.Drop()
 			log.Debugln("[元数据预处理] 错误: %s", err)
+			return
 		}
-		return
+		// UDP/QUIC may carry a recoverable domain name. Let UDPSniff inspect
+		// the first packets before giving up on a missing fake-IP record.
+		fakeIPRecordMissing = resolver.IsFakeIP(fakeIP)
+		if !fakeIPRecordMissing {
+			packet.Drop()
+			return
+		}
 	}
 	key := packet.Key()
 	sender, loaded := natTable.GetOrCreate(key, func() C.PacketSender {
@@ -603,7 +612,17 @@ func handleUDPConn(packet C.PacketAdapter) {
 				return nil, nil, err
 			}
 
-			_ = preHandleMetadata(metadata) // error was pre-checked
+			if fakeIPRecordMissing {
+				if metadata.SniffHost == "" {
+					return nil, nil, fmt.Errorf("fake DNS record %s missing and UDP sniff did not recover a domain", fakeIP)
+				}
+				metadata.Host = metadata.SniffHost
+				metadata.DstIP = netip.Addr{}
+				metadata.DNSMode = C.DNSFakeIP
+				resolver.InsertHostByIP(fakeIP, metadata.Host)
+			} else if err := preHandleMetadata(metadata); err != nil {
+				return nil, nil, err
+			}
 
 			proxy, rule, err := resolveMetadata(metadata)
 			if err != nil {
@@ -664,6 +683,7 @@ func handleTCPConn(connCtx C.ConnContext) {
 		return
 	}
 	fixMetadata(metadata) // fix some metadata not set via metadata.SetRemoteAddr or metadata.SetRemoteAddress
+	fakeIP := metadata.DstIP
 
 	preHandleFailed := false
 	if err := preHandleMetadata(metadata); err != nil {
@@ -679,6 +699,12 @@ func handleTCPConn(connCtx C.ConnContext) {
 		// Try to sniff a domain when `preHandleMetadata` failed, this is usually
 		// caused by a "Fake DNS record missing" error when enhanced-mode is fake-ip.
 		if snifferDispatcher.TCPSniff(conn, metadata) {
+			if resolver.IsFakeIP(fakeIP) && metadata.SniffHost != "" {
+				metadata.Host = metadata.SniffHost
+				metadata.DstIP = netip.Addr{}
+				metadata.DNSMode = C.DNSFakeIP
+				resolver.InsertHostByIP(fakeIP, metadata.Host)
+			}
 			// we now have a domain name
 			preHandleFailed = false
 		}
