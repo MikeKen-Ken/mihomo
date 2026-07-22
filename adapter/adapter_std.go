@@ -2,4 +2,6 @@
 
 package adapter
 
-func recordProxyConnectivityTest(proxyName string, delay int, timeoutMs int) {}
+func recordProxyConnectivityTest(proxyName string, delay int, timeoutMs int) {
+	recordDesktopConnectivityStats(proxyName, delay, timeoutMs)
+}
