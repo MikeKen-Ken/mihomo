@@ -18,6 +18,8 @@ const (
 	desktopStatsRetentionDays     = 30
 	desktopDefaultPenaltyDelayMs  = 5000
 	desktopConnectivityStatsFile  = "proxy-connectivity-stats.json"
+	// 同一节点一分钟内最多记 1 次失败，避免重连/健康检查风暴把分数打崩。
+	desktopFailureRecordMinInterval = time.Minute
 )
 
 type desktopDayCounts struct {
@@ -36,8 +38,9 @@ type desktopStatsFileV2 struct {
 }
 
 var (
-	desktopStatsMu    sync.Mutex
-	desktopStatsCache map[string]desktopProxyEntry
+	desktopStatsMu       sync.Mutex
+	desktopStatsCache    map[string]desktopProxyEntry
+	desktopLastFailureAt map[string]time.Time
 )
 
 func desktopStatsPath() string {
@@ -94,6 +97,7 @@ func desktopPersistStats() {
 }
 
 // recordDesktopConnectivityStats 由 Proxy.URLTest 回调：成功记真实 delay，失败记 timeout 惩罚。
+// 同一节点一分钟内的重复失败只记一次。
 func recordDesktopConnectivityStats(proxyName string, delay int, timeoutMs int) {
 	if proxyName == "" || proxyName == "DIRECT" || proxyName == "REJECT" {
 		return
@@ -117,6 +121,19 @@ func recordDesktopConnectivityStats(proxyName string, delay int, timeoutMs int) 
 	withConnectivityStatsDiskLock(func() {
 		// 持盘锁后从磁盘重载，避免与 UI 清空/写入互相覆盖
 		desktopStatsCache = desktopLoadStatsFromDisk()
+		if desktopLastFailureAt == nil {
+			desktopLastFailureAt = make(map[string]time.Time)
+		}
+		// UI 清空该节点后磁盘无条目，允许立即重新记失败
+		if _, ok := desktopStatsCache[proxyName]; !ok {
+			delete(desktopLastFailureAt, proxyName)
+		}
+
+		if !isSuccess {
+			if last, ok := desktopLastFailureAt[proxyName]; ok && now.Sub(last) < desktopFailureRecordMinInterval {
+				return
+			}
+		}
 
 		entry := desktopStatsCache[proxyName]
 		if entry.Days == nil {
@@ -129,6 +146,7 @@ func recordDesktopConnectivityStats(proxyName string, delay int, timeoutMs int) 
 		} else {
 			counts.Failure++
 			counts.DelaySum += effectiveTimeout
+			desktopLastFailureAt[proxyName] = now
 		}
 		entry.Days[day] = counts
 		desktopPruneDays(entry.Days, now)
