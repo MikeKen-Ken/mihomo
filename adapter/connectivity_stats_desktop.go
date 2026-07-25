@@ -67,6 +67,37 @@ func desktopPruneDays(days map[string]desktopDayCounts, now time.Time) {
 	}
 }
 
+// desktopPruneExpiredEntries 清理过期天键；days 已空则删除 proxy 条目与对应 lastFailureAt。
+// 调用方须已持有 desktopStatsMu。
+func desktopPruneExpiredEntries(now time.Time) {
+	if desktopStatsCache == nil {
+		return
+	}
+	for name, entry := range desktopStatsCache {
+		if entry.Days == nil {
+			delete(desktopStatsCache, name)
+			delete(desktopLastFailureAt, name)
+			continue
+		}
+		desktopPruneDays(entry.Days, now)
+		if len(entry.Days) == 0 {
+			delete(desktopStatsCache, name)
+			delete(desktopLastFailureAt, name)
+			continue
+		}
+		desktopStatsCache[name] = entry
+	}
+	for name, at := range desktopLastFailureAt {
+		if _, ok := desktopStatsCache[name]; !ok {
+			delete(desktopLastFailureAt, name)
+			continue
+		}
+		if now.Sub(at) >= desktopFailureRecordMinInterval {
+			delete(desktopLastFailureAt, name)
+		}
+	}
+}
+
 func desktopLoadStatsFromDisk() map[string]desktopProxyEntry {
 	cache := make(map[string]desktopProxyEntry)
 	raw, err := os.ReadFile(desktopStatsPath())
@@ -150,7 +181,14 @@ func recordDesktopConnectivityStats(proxyName string, delay int, timeoutMs int) 
 		}
 		entry.Days[day] = counts
 		desktopPruneDays(entry.Days, now)
-		desktopStatsCache[proxyName] = entry
+		if len(entry.Days) == 0 {
+			delete(desktopStatsCache, proxyName)
+			delete(desktopLastFailureAt, proxyName)
+		} else {
+			desktopStatsCache[proxyName] = entry
+		}
+		// 顺带清掉其他节点已过期的空条目，避免换订阅后历史节点名只增不减
+		desktopPruneExpiredEntries(now)
 		desktopPersistStats()
 	})
 }
