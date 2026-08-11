@@ -112,19 +112,23 @@ func (u *URLTest) healthCheck() {
 	u.fastSingle.Reset()
 }
 
+// NowIsManual implements NowIsManualAble.
+func (u *URLTest) NowIsManual() bool {
+	return u.selected != ""
+}
+
 func (u *URLTest) fast(touch bool) C.Proxy {
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
 		proxies := u.GetProxies(touch)
+		// 手动选择：立即生效，不等待该节点测速完成（与 Fallback 一致）
 		if u.selected != "" {
 			for _, proxy := range proxies {
-				if !proxy.AliveForTestUrl(u.testUrl) {
-					continue
-				}
 				if proxy.Name() == u.selected {
 					u.fastNode = proxy
 					return proxy, nil
 				}
 			}
+			u.selected = ""
 		}
 
 		fast := proxies[0]
