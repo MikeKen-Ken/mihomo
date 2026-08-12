@@ -11,7 +11,7 @@ require (
 	github.com/gofrs/uuid/v5 v5.4.0
 	github.com/golang/snappy v1.0.0
 	github.com/metacubex/age v0.0.0-20260603010618-28d156b4ea78
-	github.com/metacubex/amneziawg-go v0.0.0-20251104174305-5a0e9f7e361d
+	github.com/metacubex/amneziawg-go v0.0.0-20260612143004-19b4f1cdd5ec
 	github.com/metacubex/bart v0.26.0
 	github.com/metacubex/bbolt v0.0.0-20250725135710-010dbbbb7a5b
 	github.com/metacubex/blake3 v0.1.0
@@ -42,7 +42,7 @@ require (
 	github.com/metacubex/ssh v0.1.0
 	github.com/metacubex/tailscale v0.0.0-20260520011538-f23132fac4b7
 	github.com/metacubex/tfo-go v0.0.0-20251130171125-413e892ac443
-	github.com/metacubex/tls v0.1.6
+	github.com/metacubex/tls v0.1.7
 	github.com/metacubex/utls v1.8.4
 	github.com/metacubex/wireguard-go v0.0.0-20250820062549-a6cecdd7f57f
 	github.com/mroth/weightedrand/v2 v2.1.0
