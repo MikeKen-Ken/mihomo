@@ -15,13 +15,13 @@ jobs:
     strategy:
       matrix:
         jobs:
-          # Windows 11 等现代 PC：64 位、Go 1.26、AMD64 v3
+          # Windows 11 等现�?PC�?4 位、Go 1.26、AMD64 v3
           - { goos: windows, goarch: amd64, goamd64: v3, output: amd64 }
 
           # macOS Apple Silicon（M1/M2 等）
           - { goos: darwin, goarch: arm64, output: arm64 }
 
-          # Linux 桌面 / 服务器
+          # Linux 桌面 / 服务�?
           - { goos: linux, goarch: amd64, goamd64: v3, output: amd64 }
           - { goos: linux, goarch: arm64, output: arm64 }
 
@@ -128,6 +128,7 @@ jobs:
         cd bin/
         find . -type f -not -name "checksums.*" -not -name "version.txt" | sort | xargs sha256sum > checksums.txt
         cat checksums.txt
+        echo "VERSION=$(cat version.txt)" >> $GITHUB_ENV
       shell: bash
 
     - name: Delete current release assets
@@ -153,3 +154,14 @@ jobs:
         prerelease: true
         generate_release_notes: false
         body: ""
+
+    - name: Upload immutable version release
+      uses: softprops/action-gh-release@v3
+      if: ${{ success() && env.VERSION != '' }}
+      with:
+        tag_name: ${{ env.VERSION }}
+        files: |
+          bin/*
+        prerelease: true
+        generate_release_notes: false
+        body: "Immutable sidecar assets for pinned desktop/Android builds."
