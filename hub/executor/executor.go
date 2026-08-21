@@ -250,9 +250,9 @@ func updateDNS(c *config.DNS, generalIPv6 bool) {
 		// resolver and clear the persistent mapping/cache state.
 		tunnel.CloseAllConnections()
 		if err := resolver.FlushFakeIP(); err != nil {
-			log.Warnln("[DNS] DNS/Fake-IP 配置变更后清理映射失败: %s", err)
+			log.Warnln("[DNS] Failed to clear mappings after DNS/Fake-IP configuration change: %s", err)
 		} else {
-			log.Infoln("[DNS] DNS/Fake-IP 配置已变更，已关闭旧连接并清理映射与缓存")
+			log.Infoln("[DNS] DNS/Fake-IP configuration changed; closed old connections and cleared mappings and cache")
 		}
 	}
 	lastDNSStateKey = dnsStateKey
@@ -387,20 +387,20 @@ func loadProvider[T P.Provider](providers map[string]T) {
 	load := func(pv T) {
 		name := pv.Name()
 		if pv.VehicleType() == P.Compatible {
-			log.Infoln("启动初始兼容提供者 %s", name)
+			log.Infoln("Starting initial compatible provider %s", name)
 		} else {
-			log.Infoln("启动初始提供者 %s", name)
+			log.Infoln("Starting initial provider %s", name)
 		}
 
 		if err := pv.Initial(); err != nil {
 			switch pv.Type() {
 			case P.Proxy:
 				{
-					log.Errorln("初始化代理提供者 %s 出错: %v", name, err)
+					log.Errorln("Failed to initialize proxy provider %s: %v", name, err)
 				}
 			case P.Rule:
 				{
-					log.Errorln("初始化规则提供者 %s 出错: %v", name, err)
+					log.Errorln("Failed to initialize rule provider %s: %v", name, err)
 				}
 			}
 		}
@@ -423,15 +423,15 @@ func loadProvider[T P.Provider](providers map[string]T) {
 func updateSniffer(snifferConfig *sniffer.Config) {
 	dispatcher, err := sniffer.NewDispatcher(snifferConfig)
 	if err != nil {
-		log.Warnln("初始化嗅探器失败，错误: %v", err)
+		log.Warnln("Failed to initialize sniffer: %v", err)
 	}
 
 	tunnel.UpdateSniffer(dispatcher)
 
 	if snifferConfig.Enable {
-		log.Infoln("嗅探器已加载并运行")
+		log.Infoln("Sniffer loaded and running")
 	} else {
-		log.Infoln("嗅探器已关闭")
+		log.Infoln("Sniffer closed")
 	}
 }
 
@@ -465,7 +465,7 @@ func updateGeneral(general *config.General, logging bool) {
 
 	dialer.SetTcpConcurrent(general.TCPConcurrent)
 	if logging && general.TCPConcurrent {
-		log.Infoln("已启用 TCP 并发连接")
+		log.Infoln("TCP concurrent connections enabled")
 	}
 
 	inbound.SetTfo(general.InboundTfo)
@@ -481,7 +481,7 @@ func updateGeneral(general *config.General, logging bool) {
 	dialer.DefaultInterface.Store(general.Interface)
 	dialer.DefaultRoutingMark.Store(int32(general.RoutingMark))
 	if logging && general.RoutingMark > 0 {
-		log.Infoln("使用路由标记: %#x", general.RoutingMark)
+		log.Infoln("Using routing mark: %#x", general.RoutingMark)
 	}
 
 	iface.FlushCache()
@@ -501,7 +501,7 @@ func updateUsers(users []auth.AuthUser) {
 	authenticator := auth.NewAuthenticator(users)
 	authStore.Default.SetAuthenticator(authenticator)
 	if authenticator != nil {
-		log.Infoln("本地入站认证信息已更新")
+		log.Infoln("Local inbound authentication information updated")
 	}
 }
 
@@ -546,7 +546,7 @@ func updateIPTables(cfg *config.Config) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Errorln("[IPTABLES] 设置 iptables 失败: %s", err.Error())
+			log.Errorln("[IPTABLES] Failed to configure iptables: %s", err.Error())
 			os.Exit(2)
 		}
 	}()
@@ -595,7 +595,7 @@ func updateIPTables(cfg *config.Config) {
 		return
 	}
 
-	log.Infoln("[IPTABLES] iptables 设置完成")
+	log.Infoln("[IPTABLES] iptables configured successfully")
 }
 
 func Shutdown() {
@@ -603,5 +603,5 @@ func Shutdown() {
 	tproxy.CleanupTProxyIPTables()
 	resolver.StoreFakePoolState()
 
-	log.Warnln("Mihomo 正在关闭")
+	log.Warnln("Mihomo is shutting down")
 }

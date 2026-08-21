@@ -174,9 +174,9 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 	var satisfied bool
 	uid := utils.NewUUIDV4().String()
 	if src := C.HealthCheckSourceName(ctx); src != "" {
-		log.Debugln("[%s] 健康检测中，代理: %s，URL: %s，id: {%s}", src, p.Name(), url, uid)
+		log.Debugln("[%s] Health check in progress, proxy: %s, URL: %s, id: {%s}", src, p.Name(), url, uid)
 	} else {
-		log.Debugln("健康检测中，代理: %s，URL: %s，id: {%s}", p.Name(), url, uid)
+		log.Debugln("Health check in progress, proxy: %s, URL: %s, id: {%s}", p.Name(), url, uid)
 	}
 
 	defer func() {
@@ -211,9 +211,9 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		}
 
 		if src := C.HealthCheckSourceName(ctx); src != "" {
-			log.Debugln("[%s] 健康检测完成，代理: %s，URL: %s，存活: %t，延迟: %d 毫秒 uid: {%s}", src, p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+			log.Debugln("[%s] Health check completed, proxy: %s, URL: %s, alive: %t, delay: %d ms uid: {%s}", src, p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
 		} else {
-			log.Debugln("健康检测完成，代理: %s，URL: %s，存活: %t，延迟: %d 毫秒 uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+			log.Debugln("Health check completed, proxy: %s, URL: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
 		}
 
 		delayVal := int(t)
@@ -291,8 +291,8 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 			start = second
 		} else {
 			if strings.HasPrefix(url, "http://") {
-				log.Errorln("%s 未能从 %s 获取第二次响应: %v", p.Name(), url, ignoredErr)
-				log.Warnln("建议为 provider.health-check.url 与 group.url 使用 HTTPS 以提高可靠性；部分机场会劫持测速地址且不兼容重复 HEAD，使用 HTTP 可能导致检测失败。")
+				log.Errorln("%s failed to receive the second response from %s: %v", p.Name(), url, ignoredErr)
+				log.Warnln("Using HTTPS for provider.health-check.url and group.url is recommended; some providers hijack test URLs and do not support repeated HEAD requests, so HTTP may cause health checks to fail.")
 			}
 		}
 	}

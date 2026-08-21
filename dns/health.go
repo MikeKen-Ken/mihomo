@@ -92,7 +92,7 @@ func (h *healthMonitor) trigger(now time.Time) {
 	// 软恢复后的升级窗口内再次触发 → 软恢复无效，升级为重启
 	if !h.lastHealAt.IsZero() && now.Sub(h.lastHealAt) < healEscalateWindow {
 		if !h.lastEscalate.IsZero() && now.Sub(h.lastEscalate) < healEscalateCooldown {
-			log.Warnln("[DNS] 自愈无效但仍在重启冷却期内，跳过本次重启请求")
+			log.Warnln("[DNS] Automatic recovery was ineffective, but the restart cooldown is active; skipping this restart request")
 			return
 		}
 		h.lastEscalate = now
@@ -106,7 +106,7 @@ func (h *healthMonitor) trigger(now time.Time) {
 	// 首次或距上次软恢复较久：执行软恢复
 	h.lastHealAt = now
 	h.quietUntil = now.Add(healGracePeriod)
-	log.Warnln("[DNS] 检测到连续解析失败，执行自愈：清空缓存并重置上游连接")
+	log.Warnln("[DNS] Consecutive resolution failures detected; starting automatic recovery: clearing cache and resetting upstream connections")
 	resolver.ClearCache()
 	resolver.ResetConnection()
 }

@@ -288,7 +288,7 @@ func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedSta
 	notifyProxyGroupRefresh(gb.Name())
 
 	if !shouldTest {
-		log.Debugln("代理组 %s：max-connect-times 计数未达冷却阈值，count=%d/%d", gb.Name(), currentConnectTimes, gb.maxConnectTimes)
+			log.Debugln("Proxy group %s: max-connect-times count has not reached the cooldown threshold, count=%d/%d", gb.Name(), currentConnectTimes, gb.maxConnectTimes)
 		return
 	}
 	gb.connectTestMux.Lock()
@@ -322,7 +322,7 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 
 		status, err := utils.NewUnsignedRanges[uint16](expectedStatus)
 		if err != nil {
-			log.Debugln("代理组 %s：跳过 %s 预检: %v", gb.Name(), trigger, err)
+			log.Debugln("Proxy group %s: skipping %s precheck: %v", gb.Name(), trigger, err)
 			fn()
 			return
 		}
@@ -335,31 +335,31 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 			return proxy.URLTest(ctx, testURL, status)
 		}
 
-		log.Warnln("[应用] %s 检测启动\tgroup=%s\tproxy=%s\ttimeoutMs=%d", trigger, gb.Name(), proxy.Name(), timeoutMs)
+			log.Warnln("[App] %s check started\tgroup=%s\tproxy=%s\ttimeoutMs=%d", trigger, gb.Name(), proxy.Name(), timeoutMs)
 		if notifyUI {
 			notifyMaxConnectTimesTestTriggered(gb.Name(), proxy.Name())
 		}
 
 		delay, testErr := runURLTest()
 		if testErr == nil {
-			log.Warnln("[应用] %s 检测结果\t%s\t%s\t成功\t%d", trigger, gb.Name(), proxy.Name(), delay)
+			log.Warnln("[App] %s check result\t%s\t%s\tsuccess\t%d", trigger, gb.Name(), proxy.Name(), delay)
 			gb.resetFailedTimesAfterPreCheckSuccess()
 			return
 		}
 
-		log.Warnln("[应用] %s 检测结果\t%s\t%s\t失败\t%v", trigger, gb.Name(), proxy.Name(), testErr)
-		log.Warnln("[应用] %s 重试\tgroup=%s\tproxy=%s\treason=首次检测失败", trigger, gb.Name(), proxy.Name())
+		log.Warnln("[App] %s check result\t%s\t%s\tfailed\t%v", trigger, gb.Name(), proxy.Name(), testErr)
+		log.Warnln("[App] %s retry\tgroup=%s\tproxy=%s\treason=initial check failed", trigger, gb.Name(), proxy.Name())
 
 		retryDelay, retryErr := runURLTest()
 		if retryErr == nil {
-			log.Warnln("[应用] %s 检测结果\t%s\t%s\t成功\t%d", trigger, gb.Name(), proxy.Name(), retryDelay)
+			log.Warnln("[App] %s check result\t%s\t%s\tsuccess\t%d", trigger, gb.Name(), proxy.Name(), retryDelay)
 			gb.resetFailedTimesAfterPreCheckSuccess()
 			return
 		}
 
-		log.Warnln("[应用] %s 检测结果\t%s\t%s\t失败\t%v", trigger, gb.Name(), proxy.Name(), retryErr)
-		log.Warnln("[应用] %s 触发健康检测\tgroup=%s\tproxy=%s\treason=重试仍失败", trigger, gb.Name(), proxy.Name())
-		log.Infoln("代理组 %s 当前代理 %s 连续两次 %s 预检失败，触发健康检测", gb.Name(), proxy.Name(), trigger)
+		log.Warnln("[App] %s check result\t%s\t%s\tfailed\t%v", trigger, gb.Name(), proxy.Name(), retryErr)
+		log.Warnln("[App] %s triggered health check\tgroup=%s\tproxy=%s\treason=retry failed", trigger, gb.Name(), proxy.Name())
+		log.Infoln("Proxy group %s current proxy %s failed %s precheck twice; triggering health check", gb.Name(), proxy.Name(), trigger)
 		fn()
 	}()
 }
@@ -448,28 +448,28 @@ func (gb *GroupBase) onDialFailed(ctx context.Context, adapterType C.AdapterType
 
 		shouldPreCheck := false
 		if strings.Contains(err.Error(), "connection refused") {
-			log.Warnln("[应用] max-failed-times 达阈值\tgroup=%s\treason=连接被拒绝", gb.Name())
+			log.Warnln("[App] max-failed-times threshold reached\tgroup=%s\treason=connection refused", gb.Name())
 			shouldPreCheck = true
 		} else {
 			gb.failedTestMux.Lock()
 			gb.failedTimes++
 			if gb.failedTimes == 1 {
-				log.Debugln("代理组 %s 首次失败", gb.Name())
+				log.Debugln("Proxy group %s first failure", gb.Name())
 				gb.failedTime = time.Now()
-				log.Warnln("[应用] max-failed-times 更新\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
+				log.Warnln("[App] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
 				if gb.failedTimes >= gb.maxFailedTimes {
 					shouldPreCheck = true
 				}
 			} else {
 				if time.Since(gb.failedTime) > time.Duration(gb.failureResetInterval)*time.Millisecond {
-					log.Warnln("[应用] max-failed-times 重置\tgroup=%s\treason=窗口过期\tcount=%d", gb.Name(), gb.failedTimes)
+					log.Warnln("[App] max-failed-times reset\tgroup=%s\treason=window expired\tcount=%d", gb.Name(), gb.failedTimes)
 					gb.failedTimes = 0
 					gb.failedTestMux.Unlock()
 					return
 				}
 
-				log.Debugln("代理组 %s 失败计数: %d", gb.Name(), gb.failedTimes)
-				log.Warnln("[应用] max-failed-times 更新\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
+				log.Debugln("Proxy group %s failure count: %d", gb.Name(), gb.failedTimes)
+				log.Warnln("[App] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
 				if gb.failedTimes >= gb.maxFailedTimes {
 					shouldPreCheck = true
 				}
@@ -485,7 +485,7 @@ func (gb *GroupBase) onDialFailed(ctx context.Context, adapterType C.AdapterType
 		if proxy != nil {
 			proxyName = proxy.Name()
 		}
-		log.Warnln("[应用] max-failed-times 启动预检\tgroup=%s\tproxy=%s", gb.Name(), proxyName)
+		log.Warnln("[App] max-failed-times precheck started\tgroup=%s\tproxy=%s", gb.Name(), proxyName)
 		gb.scheduleCurrentProxyPreHealthCheck(proxy, testURL, expectedStatus, "max-failed-times", false, fn)
 	}()
 }
@@ -500,13 +500,13 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 
 	// Notify health check triggered for fallback groups (CFA only)
 	if gb.Type() == C.Fallback {
-		log.Infoln("Fallback 组 %s 触发健康检测", gb.Name())
+		log.Infoln("Fallback group %s triggered a health check", gb.Name())
 		notifyHealthCheckTriggered(gb.Name())
 	}
 
 	expectedStatus, err := utils.NewUnsignedRanges[uint16](expectedStatusText)
 	if err != nil {
-		log.Warnln("代理组 %s 解析 expected-status 失败: %s", gb.Name(), err.Error())
+		log.Warnln("Proxy group %s failed to parse expected-status: %s", gb.Name(), err.Error())
 		expectedStatus = nil
 	}
 	targetNames := gb.healthCheckTargetNames()
@@ -518,7 +518,7 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 			continue
 		}
 		if proxyProvider.HealthCheckURLUntilHealthy(testURL, expectedStatus, targetNames) {
-			log.Infoln("代理组 %s 已找到健康代理，提前结束健康检测", gb.Name())
+			log.Infoln("Proxy group %s found a healthy proxy; ending health check early", gb.Name())
 			break
 		}
 	}

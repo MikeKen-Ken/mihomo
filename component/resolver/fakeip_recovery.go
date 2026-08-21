@@ -48,7 +48,7 @@ func (r *fakeIPRecovery) onMiss(ip netip.Addr) {
 	}
 
 	ClearCache()
-	log.Warnln("[DNS] Fake-IP 反查连续失败，已清除 DNS 应答缓存，等待客户端重新解析: %s", ip)
+	log.Warnln("[DNS] Fake-IP reverse lookup failed repeatedly; DNS response cache cleared, waiting for the client to resolve again: %s", ip)
 }
 
 func (r *fakeIPRecovery) warnRateLimited(ip netip.Addr) {
@@ -61,7 +61,7 @@ func (r *fakeIPRecovery) warnRateLimited(ip netip.Addr) {
 		return
 	}
 	r.lastWarn[ip] = now
-	log.Warnln("[DNS] Fake-IP 反查失败: %s（映射可能已过期；客户端重新解析后将恢复）", ip)
+	log.Warnln("[DNS] Fake-IP reverse lookup failed: %s (the mapping may have expired; resolving again on the client will recover it)", ip)
 }
 
 func (r *fakeIPRecovery) recordAndShouldRepair(ip netip.Addr) bool {
