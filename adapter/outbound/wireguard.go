@@ -106,6 +106,8 @@ type AmneziaWGOption struct {
 	J2    string `proxy:"j2,omitempty"`    // AmneziaWG v1.5 only (removed in v2)
 	J3    string `proxy:"j3,omitempty"`    // AmneziaWG v1.5 only (removed in v2)
 	Itime int64  `proxy:"itime,omitempty"` // AmneziaWG v1.5 only (removed in v2)
+	RandomTrailers  bool   `proxy:"random-trailers,omitempty"` // AmneziaWG v3.1+
+	DisableCookies  bool   `proxy:"disable-cookies,omitempty"` // AmneziaWG v3.1+
 }
 
 type wgSingErrorHandler struct {
@@ -456,6 +458,12 @@ func (w *WireGuard) genIpcConf(ctx context.Context, updateOnly bool) (string, er
 			}
 			if w.option.AmneziaWGOption.Itime != 0 {
 				ipcConf += "itime=" + strconv.FormatInt(int64(w.option.AmneziaWGOption.Itime), 10) + "\n"
+			}
+			if w.option.AmneziaWGOption.RandomTrailers {
+				ipcConf += "random_trailers=1\n"
+			}
+			if w.option.AmneziaWGOption.DisableCookies {
+				ipcConf += "disable_cookies=1\n"
 			}
 		}
 	}

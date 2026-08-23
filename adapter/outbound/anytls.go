@@ -37,6 +37,7 @@ type AnyTLSOption struct {
 	Certificate              string     `proxy:"certificate,omitempty"`
 	PrivateKey               string     `proxy:"private-key,omitempty"`
 	UDP                      bool       `proxy:"udp,omitempty"`
+	ClientMetadata           string     `proxy:"client-metadata,omitempty"`
 	IdleSessionCheckInterval int        `proxy:"idle-session-check-interval,omitempty"`
 	IdleSessionTimeout       int        `proxy:"idle-session-timeout,omitempty"`
 	MinIdleSession           int        `proxy:"min-idle-session,omitempty"`
@@ -105,6 +106,7 @@ func NewAnyTLS(option AnyTLSOption) (*AnyTLS, error) {
 
 	tOption := anytls.ClientConfig{
 		Password:                 option.Password,
+		ClientMetadata:           option.ClientMetadata,
 		Server:                   M.ParseSocksaddrHostPort(option.Server, uint16(option.Port)),
 		Dialer:                   singDialer,
 		IdleSessionCheckInterval: time.Duration(option.IdleSessionCheckInterval) * time.Second,

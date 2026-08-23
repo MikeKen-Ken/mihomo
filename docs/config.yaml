@@ -1144,6 +1144,8 @@ proxies: # socks5
     #   j2: <c><b 0xf6ab><t><wt 1000>                     # AmneziaWG v1.5 only (removed in v2)
     #   j3: <t><b 0xf6ab><c><r 10>                        # AmneziaWG v1.5 only (removed in v2)
     #   itime: 60                                         # AmneziaWG v1.5 only (removed in v2)
+    #   random-trailers: true                             # AmneziaWG v3.1+
+    #   disable-cookies: true                             # AmneziaWG v3.1+
 
   # tailscale
   - name: "tailscale"
@@ -1354,6 +1356,7 @@ proxies: # socks5
     password: "<your password>"
     # client-fingerprint: chrome
     udp: true
+    # client-metadata: "" # Optional metadata sent to the server. It is empty by default to avoid client tracking.
     # idle-session-check-interval: 30 # seconds
     # idle-session-timeout: 30 # seconds
     # min-idle-session: 0
