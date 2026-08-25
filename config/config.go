@@ -258,6 +258,15 @@ type RawClashForAndroid struct {
 	LanBlockedDevices []string `yaml:"lan-blocked-devices" json:"lan-blocked-devices"`
 	LanMaxDevices int `yaml:"lan-max-devices" json:"lan-max-devices"`
 	LanOverLimitAction string `yaml:"lan-over-limit-action" json:"lan-over-limit-action"`
+	TemporaryRules []RawTemporaryRule `yaml:"temporary-rules" json:"temporary-rules"`
+}
+
+// RawTemporaryRule is an application-only override, inserted before profile rules in rule mode.
+type RawTemporaryRule struct {
+	ID string `yaml:"id" json:"id"`
+	RuleType string `yaml:"rule-type" json:"rule-type"`
+	Payload string `yaml:"payload" json:"payload"`
+	Target string `yaml:"target" json:"target"`
 }
 
 type RawNTP struct {
