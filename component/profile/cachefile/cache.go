@@ -37,7 +37,14 @@ func (c *CacheFile) SetSelected(group, selected string) {
 		return
 	}
 
-	err := c.DB.Batch(func(t *bbolt.Tx) error {
+	err := c.DB.Update(func(t *bbolt.Tx) error {
+		if selected == "" {
+			bucket := t.Bucket(bucketSelected)
+			if bucket == nil {
+				return nil
+			}
+			return bucket.Delete([]byte(group))
+		}
 		bucket, err := t.CreateBucketIfNotExists(bucketSelected)
 		if err != nil {
 			return err

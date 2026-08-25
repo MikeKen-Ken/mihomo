@@ -57,6 +57,11 @@ func (u *URLTest) ForceSet(name string) {
 	u.fastSingle.Reset()
 }
 
+// ClearManualSelection releases the pin without dropping the last fast node.
+func (u *URLTest) ClearManualSelection() {
+	u.selected = ""
+}
+
 // DialContext implements C.ProxyAdapter
 func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := u.fast(true)

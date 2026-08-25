@@ -527,7 +527,7 @@ func patchSelectGroup(proxies map[string]C.Proxy) {
 		}
 
 		selected, exist := mapping[name]
-		if !exist {
+		if !exist || selected == "" {
 			continue
 		}
 

@@ -118,7 +118,7 @@ func (s *Selector) Set(name string) error {
 
 func (s *Selector) ForceSet(name string) {
 	s.selected = name
-	s.manualSelected = true
+	s.manualSelected = name != ""
 }
 
 // NowIsManual implements NowIsManualAble.
