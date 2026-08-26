@@ -24,8 +24,46 @@ func groupRouter() http.Handler {
 		r.Use(parseProxyName, findProxyByName)
 		r.Get("/", getGroup)
 		r.Get("/delay", getGroupDelay)
+		r.Put("/order", putGroupProxyOrder)
 	})
 	return r
+}
+
+type cachedProxyReorderAble interface {
+	ReorderCachedProxies([]string)
+}
+
+func putGroupProxyOrder(w http.ResponseWriter, r *http.Request) {
+	proxy := r.Context().Value(CtxKeyProxy).(C.Proxy)
+	switch proxy.Type() {
+	case C.URLTest, C.Fallback:
+	default:
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, newError("Must be url-test or fallback"))
+		return
+	}
+
+	req := struct {
+		Proxies []string `json:"proxies"`
+	}{}
+	if err := render.DecodeJSON(r.Body, &req); err != nil {
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, ErrBadRequest)
+		return
+	}
+	if len(req.Proxies) <= 1 {
+		render.NoContent(w, r)
+		return
+	}
+
+	reorder, ok := proxy.Adapter().(cachedProxyReorderAble)
+	if !ok {
+		render.Status(r, http.StatusNotImplemented)
+		render.JSON(w, r, newError("ReorderCachedProxies not available"))
+		return
+	}
+	reorder.ReorderCachedProxies(req.Proxies)
+	render.NoContent(w, r)
 }
 
 func getGroups(w http.ResponseWriter, r *http.Request) {
