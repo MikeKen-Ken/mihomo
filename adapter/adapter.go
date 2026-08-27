@@ -233,7 +233,9 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 	}
 
 	start := time.Now()
-	instance, err := p.DialContext(ctx, &addr)
+	dialCtx, cancelDial := delayTestPhaseContext(ctx, timeoutMs)
+	instance, err := p.DialContext(dialCtx, &addr)
+	cancelDial()
 	if err != nil {
 		return
 	}
@@ -245,8 +247,6 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 	if err != nil {
 		return
 	}
-	req = req.WithContext(ctx)
-
 	tlsConfig, err := ca.GetTLSConfig(ca.Option{})
 	if err != nil {
 		return
@@ -274,7 +274,13 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 
 	defer client.CloseIdleConnections()
 
-	resp, err := client.Do(req)
+	doRequest := func() (*http.Response, error) {
+		requestCtx, cancelRequest := delayTestPhaseContext(ctx, timeoutMs)
+		defer cancelRequest()
+		return client.Do(req.Clone(requestCtx))
+	}
+
+	resp, err := doRequest()
 
 	if err != nil {
 		return
@@ -286,15 +292,7 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		second := time.Now()
 		var ignoredErr error
 		var secondResp *http.Response
-		secondReq := req
-		cancelSecond := func() {}
-		if configuredTimeoutMs, ok := C.DelayTestTimeoutMs(ctx); ok {
-			var secondCtx context.Context
-			secondCtx, cancelSecond = context.WithTimeout(ctx, time.Duration(configuredTimeoutMs)*time.Millisecond)
-			secondReq = req.Clone(secondCtx)
-		}
-		secondResp, ignoredErr = client.Do(secondReq)
-		cancelSecond()
+		secondResp, ignoredErr = doRequest()
 		if ignoredErr == nil {
 			resp = secondResp
 			_ = resp.Body.Close()
@@ -318,6 +316,13 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 
 func delayReachedTimeout(delay uint16, timeoutMs int) bool {
 	return timeoutMs > 0 && int(delay) >= timeoutMs
+}
+
+func delayTestPhaseContext(ctx context.Context, timeoutMs int) (context.Context, context.CancelFunc) {
+	if configuredTimeoutMs, ok := C.DelayTestTimeoutMs(ctx); ok {
+		return context.WithTimeout(ctx, time.Duration(configuredTimeoutMs)*time.Millisecond)
+	}
+	return context.WithCancel(ctx)
 }
 
 func NewProxy(adapter C.ProxyAdapter) *Proxy {

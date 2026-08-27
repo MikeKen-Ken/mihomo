@@ -240,15 +240,19 @@ func (lb *LoadBalance) MarshalJSON() ([]byte, error) {
 		all = append(all, proxy.Name())
 	}
 	return json.Marshal(map[string]any{
-		"type":           lb.Type().String(),
-		"all":            all,
-		"testUrl":        lb.testUrl,
-		"expectedStatus": lb.expectedStatus,
-		"hidden":         lb.Hidden(),
-		"icon":           lb.Icon(),
+		"type":            lb.Type().String(),
+		"all":             all,
+		"testUrl":         lb.testUrl,
+		"expectedStatus":  lb.expectedStatus,
+		"hidden":          lb.Hidden(),
+		"icon":            lb.Icon(),
 		"connectTimes":    lb.ConnectTimes(),
 		"maxConnectTimes": lb.MaxConnectTimes(),
 	})
+}
+
+func (lb *LoadBalance) DelayTestSpec() (string, string) {
+	return lb.testUrl, lb.expectedStatus
 }
 
 func (lb *LoadBalance) Providers() []P.ProxyProvider {

@@ -71,12 +71,12 @@ func (s *Selector) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(map[string]any{
-		"type":    s.Type().String(),
-		"now":     s.Now(),
-		"all":     all,
-		"testUrl": url,
-		"hidden":  s.Hidden(),
-		"icon":    s.Icon(),
+		"type":            s.Type().String(),
+		"now":             s.Now(),
+		"all":             all,
+		"testUrl":         url,
+		"hidden":          s.Hidden(),
+		"icon":            s.Icon(),
 		"connectTimes":    s.ConnectTimes(),
 		"maxConnectTimes": s.MaxConnectTimes(),
 	})
@@ -154,6 +154,10 @@ func (s *Selector) Providers() []P.ProxyProvider {
 
 func (s *Selector) Proxies() []C.Proxy {
 	return s.GetProxies(false)
+}
+
+func (s *Selector) DelayTestSpec() (string, string) {
+	return s.testUrl, s.expectedStatus
 }
 
 func NewSelector(option *GroupCommonOption, providers []P.ProxyProvider) *Selector {

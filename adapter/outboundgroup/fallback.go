@@ -153,14 +153,18 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 		"now":             f.Now(),
 		"all":             all,
 		"testUrl":         f.testUrl,
-		"expectedStatus": f.expectedStatus,
+		"expectedStatus":  f.expectedStatus,
 		"fixed":           f.selected,
 		"selectedTimeout": f.selectedTimeout,
 		"hidden":          f.Hidden(),
 		"icon":            f.Icon(),
-		"connectTimes":     f.ConnectTimes(),
+		"connectTimes":    f.ConnectTimes(),
 		"maxConnectTimes": f.MaxConnectTimes(),
 	})
+}
+
+func (f *Fallback) DelayTestSpec() (string, string) {
+	return f.testUrl, f.expectedStatus
 }
 
 // Unwrap implements C.ProxyAdapter

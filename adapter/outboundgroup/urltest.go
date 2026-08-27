@@ -192,14 +192,14 @@ func (u *URLTest) MarshalJSON() ([]byte, error) {
 		all = append(all, proxy.Name())
 	}
 	return json.Marshal(map[string]any{
-		"type":           u.Type().String(),
-		"now":            u.Now(),
-		"all":            all,
-		"testUrl":        u.testUrl,
-		"expectedStatus": u.expectedStatus,
-		"fixed":          u.selected,
-		"hidden":         u.Hidden(),
-		"icon":           u.Icon(),
+		"type":            u.Type().String(),
+		"now":             u.Now(),
+		"all":             all,
+		"testUrl":         u.testUrl,
+		"expectedStatus":  u.expectedStatus,
+		"fixed":           u.selected,
+		"hidden":          u.Hidden(),
+		"icon":            u.Icon(),
 		"connectTimes":    u.ConnectTimes(),
 		"maxConnectTimes": u.MaxConnectTimes(),
 	})
@@ -211,6 +211,10 @@ func (u *URLTest) Providers() []P.ProxyProvider {
 
 func (u *URLTest) Proxies() []C.Proxy {
 	return u.GetProxies(false)
+}
+
+func (u *URLTest) DelayTestSpec() (string, string) {
+	return u.testUrl, u.expectedStatus
 }
 
 func (u *URLTest) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (map[string]uint16, error) {

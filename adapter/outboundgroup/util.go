@@ -22,10 +22,21 @@ type ProxyGroup interface {
 	URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (mp map[string]uint16, err error)
 }
 
+// DelayTestSpecAble exposes the URL and expected status owned by a proxy group.
+// Callers that test group members must use this specification instead of a
+// provider health-check URL so the result matches the group's own selection.
+type DelayTestSpecAble interface {
+	DelayTestSpec() (url string, expectedStatus string)
+}
+
 var _ ProxyGroup = (*Fallback)(nil)
 var _ ProxyGroup = (*LoadBalance)(nil)
 var _ ProxyGroup = (*URLTest)(nil)
 var _ ProxyGroup = (*Selector)(nil)
+var _ DelayTestSpecAble = (*Fallback)(nil)
+var _ DelayTestSpecAble = (*LoadBalance)(nil)
+var _ DelayTestSpecAble = (*URLTest)(nil)
+var _ DelayTestSpecAble = (*Selector)(nil)
 
 type SelectAble interface {
 	Set(string) error
