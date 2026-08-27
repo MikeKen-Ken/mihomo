@@ -57,9 +57,12 @@ func (u *URLTest) ForceSet(name string) {
 	u.fastSingle.Reset()
 }
 
-// ClearManualSelection releases the pin without dropping the last fast node.
+// ClearManualSelection releases the pin and drops the cached fast node so
+// the next Dial uses live auto-select instead of the previously pinned proxy.
 func (u *URLTest) ClearManualSelection() {
 	u.selected = ""
+	u.fastNode = nil
+	u.fastSingle.Reset()
 }
 
 // DialContext implements C.ProxyAdapter

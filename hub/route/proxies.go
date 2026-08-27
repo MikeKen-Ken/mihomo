@@ -90,12 +90,18 @@ func updateProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Force {
-		selector.ForceSet(req.Name)
+	if req.Name == "" {
+		if clearable, ok := proxy.Adapter().(outboundgroup.ClearManualSelectionAble); ok {
+			clearable.ClearManualSelection()
+		} else {
+			selector.ForceSet("")
+		}
 	} else if err := selector.Set(req.Name); err != nil {
 		render.Status(r, http.StatusBadRequest)
 		render.JSON(w, r, newError(fmt.Sprintf("Selector update error: %s", err.Error())))
 		return
+	} else if req.Force {
+		selector.ForceSet(req.Name)
 	}
 
 	cachefile.Cache().SetSelected(proxy.Name(), req.Name)

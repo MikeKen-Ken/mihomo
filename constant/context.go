@@ -50,6 +50,30 @@ func HealthCheckSourceName(ctx context.Context) string {
 	return s
 }
 
+type ctxKeyDelayTestTimeoutMs struct{}
+
+// WithDelayTestTimeoutMs records the user-facing delay threshold separately from
+// the operation deadline. Unified-delay tests may need extra time for dialing
+// and the warm-up request before measuring the second request.
+func WithDelayTestTimeoutMs(parent context.Context, timeoutMs int) context.Context {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if timeoutMs <= 0 {
+		return parent
+	}
+	return context.WithValue(parent, ctxKeyDelayTestTimeoutMs{}, timeoutMs)
+}
+
+// DelayTestTimeoutMs returns the user-facing delay threshold, if one was set.
+func DelayTestTimeoutMs(ctx context.Context) (int, bool) {
+	if ctx == nil {
+		return 0, false
+	}
+	timeoutMs, ok := ctx.Value(ctxKeyDelayTestTimeoutMs{}).(int)
+	return timeoutMs, ok && timeoutMs > 0
+}
+
 type PlainContext interface {
 	ID() uuid.UUID
 }

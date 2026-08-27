@@ -166,7 +166,9 @@ func (p *Proxy) MarshalJSON() ([]byte, error) {
 func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (t uint16, err error) {
 	ctx = C.WithSuppressGroupOutboundFailureStats(ctx)
 	timeoutMs := 5000
-	if deadline, ok := ctx.Deadline(); ok {
+	if configuredTimeoutMs, ok := C.DelayTestTimeoutMs(ctx); ok {
+		timeoutMs = configuredTimeoutMs
+	} else if deadline, ok := ctx.Deadline(); ok {
 		if remaining := time.Until(deadline); remaining > 0 {
 			timeoutMs = int(remaining.Milliseconds())
 		}
@@ -284,7 +286,15 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		second := time.Now()
 		var ignoredErr error
 		var secondResp *http.Response
-		secondResp, ignoredErr = client.Do(req)
+		secondReq := req
+		cancelSecond := func() {}
+		if configuredTimeoutMs, ok := C.DelayTestTimeoutMs(ctx); ok {
+			var secondCtx context.Context
+			secondCtx, cancelSecond = context.WithTimeout(ctx, time.Duration(configuredTimeoutMs)*time.Millisecond)
+			secondReq = req.Clone(secondCtx)
+		}
+		secondResp, ignoredErr = client.Do(secondReq)
+		cancelSecond()
 		if ignoredErr == nil {
 			resp = secondResp
 			_ = resp.Body.Close()
@@ -299,7 +309,15 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 
 	satisfied = resp != nil && (expectedStatus == nil || expectedStatus.Check(uint16(resp.StatusCode)))
 	t = uint16(time.Since(start) / time.Millisecond)
+	if delayReachedTimeout(t, timeoutMs) {
+		err = fmt.Errorf("measured delay %dms reached timeout %dms", t, timeoutMs)
+		satisfied = false
+	}
 	return
+}
+
+func delayReachedTimeout(delay uint16, timeoutMs int) bool {
+	return timeoutMs > 0 && int(delay) >= timeoutMs
 }
 
 func NewProxy(adapter C.ProxyAdapter) *Proxy {
