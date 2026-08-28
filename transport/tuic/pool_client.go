@@ -24,6 +24,29 @@ type PoolClient struct {
 	udpClientsMutex sync.Mutex
 }
 
+// ResetConnections closes every pooled QUIC client so the next request dials
+// on the current route instead of reusing a session bound to the old network.
+func (t *PoolClient) ResetConnections() {
+	closeClients := func(clients *list.List[Client], mutex *sync.Mutex) {
+		mutex.Lock()
+		toClose := make([]Client, 0, clients.Len())
+		for it := clients.Front(); it != nil; it = it.Next() {
+			if it.Value != nil {
+				toClose = append(toClose, it.Value)
+			}
+		}
+		*clients = list.List[Client]{}
+		mutex.Unlock()
+
+		for _, client := range toClose {
+			client.Close()
+		}
+	}
+
+	closeClients(&t.tcpClients, &t.tcpClientsMutex)
+	closeClients(&t.udpClients, &t.udpClientsMutex)
+}
+
 func (t *PoolClient) DialContext(ctx context.Context, metadata *C.Metadata) (net.Conn, error) {
 	conn, err := t.getClient(false).DialContext(ctx, metadata)
 	if errors.Is(err, TooManyOpenStreams) {

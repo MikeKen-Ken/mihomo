@@ -20,7 +20,7 @@ import (
 //     解除阻塞。该过程在核心进程内完成，几乎瞬时、无感知。
 //  2. 升级处理：若软恢复后短时间内再次触发，说明软恢复无效，执行平台相关的升级动作
 //     （见 requestCoreRestart 的 build-tag 实现）：桌面端打印哨兵请求上层重启 sidecar 进程；
-//     Android 为进程内运行、无独立进程可重启，仅记录告警。带冷却防止重启风暴。
+//     Android 为进程内运行、无独立进程可重启，执行完整网络状态恢复。带冷却防止恢复风暴。
 
 const (
 	// 触发自愈的连续失败次数阈值
@@ -98,7 +98,7 @@ func (h *healthMonitor) trigger(now time.Time) {
 		h.lastEscalate = now
 		h.lastHealAt = time.Time{}
 		h.quietUntil = now.Add(healGracePeriod)
-		// 升级：软恢复无效，按平台执行升级动作（桌面端请求重启核心进程；Android 仅告警）
+		// 升级：软恢复无效，按平台执行升级动作（桌面端重启 sidecar；Android 重置进程内网络状态）
 		requestCoreRestart()
 		return
 	}

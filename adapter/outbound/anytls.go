@@ -84,6 +84,11 @@ func (t *AnyTLS) Close() error {
 	return t.client.Close()
 }
 
+func (t *AnyTLS) ResetNetworkState() error {
+	t.client.ResetConnections()
+	return nil
+}
+
 func NewAnyTLS(option AnyTLSOption) (*AnyTLS, error) {
 	addr := net.JoinHostPort(option.Server, strconv.Itoa(option.Port))
 	outbound := &AnyTLS{

@@ -125,6 +125,11 @@ func (t *Tuic) ProxyInfo() C.ProxyInfo {
 	return info
 }
 
+func (t *Tuic) ResetNetworkState() error {
+	t.client.ResetConnections()
+	return nil
+}
+
 func NewTuic(option TuicOption) (*Tuic, error) {
 	addr := net.JoinHostPort(option.Server, strconv.Itoa(option.Port))
 	serverName := option.Server

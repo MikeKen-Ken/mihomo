@@ -279,6 +279,10 @@ func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirst
 			p := proxy
 			b.Go(func() error {
 				base := C.WithHealthCheckSourceName(hc.ctx, hc.name)
+				if !AcquireHealthCheckWorker(base) {
+					return nil
+				}
+				defer ReleaseHealthCheckWorker()
 				ctx, cancel := context.WithTimeout(base, hc.timeout)
 				defer cancel()
 				_, err := p.URLTest(ctx, url, expectedStatus)

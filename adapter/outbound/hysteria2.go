@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"sync"
 	"time"
 
 	N "github.com/metacubex/mihomo/common/net"
@@ -33,7 +34,11 @@ type Hysteria2 struct {
 	*Base
 
 	option *Hysteria2Option
-	client *hysteria2.Client
+
+	clientMu      sync.RWMutex
+	client        *hysteria2.Client
+	clientOptions hysteria2.ClientOptions
+	closed        bool
 }
 
 type Hysteria2Option struct {
@@ -87,7 +92,11 @@ type Hysteria2RealmOption struct {
 }
 
 func (h *Hysteria2) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn, err error) {
-	c, err := h.client.DialConn(ctx, M.ParseSocksaddrHostPort(metadata.String(), metadata.DstPort))
+	client, err := h.currentClient()
+	if err != nil {
+		return nil, err
+	}
+	c, err := client.DialConn(ctx, M.ParseSocksaddrHostPort(metadata.String(), metadata.DstPort))
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +107,11 @@ func (h *Hysteria2) ListenPacketContext(ctx context.Context, metadata *C.Metadat
 	if err = h.ResolveUDP(ctx, metadata); err != nil {
 		return nil, err
 	}
-	pc, err := h.client.ListenPacket(ctx)
+	client, err := h.currentClient()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := client.ListenPacket(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -110,8 +123,47 @@ func (h *Hysteria2) ListenPacketContext(ctx context.Context, metadata *C.Metadat
 
 // Close implements C.ProxyAdapter
 func (h *Hysteria2) Close() error {
-	if h.client != nil {
-		return h.client.CloseWithError(errors.New("proxy removed"))
+	h.clientMu.Lock()
+	h.closed = true
+	client := h.client
+	h.client = nil
+	h.clientMu.Unlock()
+	if client != nil {
+		return client.CloseWithError(errors.New("proxy removed"))
+	}
+	return nil
+}
+
+func (h *Hysteria2) currentClient() (*hysteria2.Client, error) {
+	h.clientMu.RLock()
+	defer h.clientMu.RUnlock()
+	if h.client == nil || h.closed {
+		return nil, errors.New("hysteria2 client is closed")
+	}
+	return h.client, nil
+}
+
+func (h *Hysteria2) ResetNetworkState() error {
+	if options := h.clientOptions.RealmOptions; options != nil && options.HTTPClient != nil {
+		options.HTTPClient.CloseIdleConnections()
+	}
+	client, err := hysteria2.NewClient(h.clientOptions)
+	if err != nil {
+		return err
+	}
+
+	h.clientMu.Lock()
+	if h.closed {
+		h.clientMu.Unlock()
+		_ = client.CloseWithError(errors.New("proxy removed"))
+		return nil
+	}
+	oldClient := h.client
+	h.client = client
+	h.clientMu.Unlock()
+
+	if oldClient != nil {
+		_ = oldClient.CloseWithError(errors.New("network changed"))
 	}
 	return nil
 }
@@ -310,6 +362,7 @@ func NewHysteria2(option Hysteria2Option) (*Hysteria2, error) {
 		return nil, err
 	}
 	outbound.client = client
+	outbound.clientOptions = clientOptions
 
 	return outbound, nil
 }

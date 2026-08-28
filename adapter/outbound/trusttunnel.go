@@ -83,6 +83,11 @@ func (t *TrustTunnel) Close() error {
 	return t.client.Close()
 }
 
+func (t *TrustTunnel) ResetNetworkState() error {
+	t.client.ResetConnections()
+	return nil
+}
+
 func NewTrustTunnel(option TrustTunnelOption) (*TrustTunnel, error) {
 	addr := net.JoinHostPort(option.Server, strconv.Itoa(option.Port))
 	outbound := &TrustTunnel{

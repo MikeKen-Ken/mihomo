@@ -139,6 +139,16 @@ func (c *Client) createSession(ctx context.Context) (*Session, error) {
 
 func (c *Client) Close() error {
 	c.dieCancel()
+	c.ResetConnections()
+	return nil
+}
+
+// ResetConnections closes all multiplexed sessions without closing the client.
+// New streams can therefore create fresh sessions on the current route.
+func (c *Client) ResetConnections() {
+	c.idleSessionLock.Lock()
+	c.idleSession = skiplist.NewSkipList[uint64, *Session]()
+	c.idleSessionLock.Unlock()
 
 	c.sessionsLock.Lock()
 	sessionToClose := make([]*Session, 0, len(c.sessions))
@@ -151,8 +161,6 @@ func (c *Client) Close() error {
 	for _, session := range sessionToClose {
 		session.Close()
 	}
-
-	return nil
 }
 
 func (c *Client) idleCleanup() {

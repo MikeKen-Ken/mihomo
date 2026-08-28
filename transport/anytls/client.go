@@ -100,3 +100,7 @@ func (c *Client) createOutboundTLSConnection(ctx context.Context) (net.Conn, err
 func (h *Client) Close() error {
 	return h.sessionClient.Close()
 }
+
+func (h *Client) ResetConnections() {
+	h.sessionClient.ResetConnections()
+}

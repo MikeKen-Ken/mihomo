@@ -146,6 +146,12 @@ type ProxyAdapter interface {
 	Close() error
 }
 
+// NetworkStateResetter is implemented by adapters that keep reusable
+// transport sessions which must not survive an Android network transition.
+type NetworkStateResetter interface {
+	ResetNetworkState() error
+}
+
 type RequestCounter interface {
 	CountRequest(metadata *Metadata)
 }

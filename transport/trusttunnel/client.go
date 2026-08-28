@@ -332,6 +332,17 @@ func (c *PoolClient) Close() error {
 	return errors.Join(errs...)
 }
 
+func (c *PoolClient) ResetConnections() {
+	c.mutex.Lock()
+	clients := c.clients
+	c.clients = nil
+	c.mutex.Unlock()
+
+	for _, client := range clients {
+		_ = client.Close()
+	}
+}
+
 func (c *PoolClient) getClient() (*Client, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
