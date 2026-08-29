@@ -395,6 +395,9 @@ func (r *Resolver) ClearCache() {
 
 func (r *Resolver) ResetConnection() {
 	if r != nil {
+		// New queries must not join an in-flight request whose transport is
+		// being reset. Existing callers still receive the old call's result.
+		r.group.Reset()
 		for _, c := range r.main {
 			c.ResetConnection()
 		}
