@@ -42,15 +42,20 @@ type Masque struct {
 	uri         string
 	h2Transport *http.Transport
 
-	runCtx        context.Context
-	runCancel     context.CancelFunc
-	runMutex      sync.Mutex
-	sessionCancel context.CancelFunc
-	sessionDone   chan struct{}
-	running       atomic.Bool
-	runDevice     atomic.Bool
+	runCtx    context.Context
+	runCancel context.CancelFunc
+	runMutex  sync.Mutex
+	session   *masqueSession
+	running   atomic.Bool
+	runDevice atomic.Bool
 
 	option MasqueOption
+}
+
+type masqueSession struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+	ipConn masque.IpConn
 }
 
 type MasqueOption struct {
@@ -264,6 +269,7 @@ func (w *Masque) run(ctx context.Context) error {
 			return err
 		}
 		w.runDevice.Store(true)
+		go w.runDeviceReader()
 	}
 
 	var pc net.PacketConn
@@ -290,53 +296,34 @@ func (w *Masque) run(ctx context.Context) error {
 		}
 	}
 
+	runCtx, runCancel := context.WithCancel(w.runCtx)
+	session := &masqueSession{
+		cancel: runCancel,
+		done:   make(chan struct{}),
+		ipConn: ipConn,
+	}
+	w.session = session
 	w.running.Store(true)
 
-	runCtx, runCancel := context.WithCancel(w.runCtx)
-	done := make(chan struct{})
-	w.sessionCancel = runCancel
-	w.sessionDone = done
+	var workers sync.WaitGroup
+	workers.Add(2)
 	contextutils.AfterFunc(runCtx, func() {
-		w.running.Store(false)
+		w.runMutex.Lock()
+		if w.session == session {
+			w.session = nil
+			w.running.Store(false)
+		}
+		w.runMutex.Unlock()
 		_ = ipConn.Close()
 		_ = closer.Close()
 		if pc != nil {
 			_ = pc.Close()
 		}
-		close(done)
+		workers.Done()
 	})
 
 	go func() {
-		defer runCancel()
-		buf := pool.Get(pool.UDPBufferSize)
-		defer pool.Put(buf)
-		bufs := [][]byte{buf}
-		sizes := []int{0}
-		for runCtx.Err() == nil {
-			_, err := w.tunDevice.Read(bufs, sizes, 0)
-			if err != nil {
-				log.Errorln("[Masque](%s) 从 TUN 设备读取失败: %v", w.name, err)
-				return
-			}
-			icmp, err := ipConn.WritePacket(buf[:sizes[0]])
-			if err != nil {
-				if errors.Is(err, net.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
-					log.Errorln("[Masque](%s) 写入 IP 连接时连接已关闭: %v", w.name, err)
-					return
-				}
-				log.Warnln("[Masque](%s) 写入 IP 连接出错: %v，继续运行…", w.name, err)
-				continue
-			}
-
-			if len(icmp) > 0 {
-				if _, err := w.tunDevice.Write([][]byte{icmp}, 0); err != nil {
-					log.Warnln("[Masque](%s) 向 TUN 写入 ICMP 失败: %v，继续运行…", w.name, err)
-				}
-			}
-		}
-	}()
-
-	go func() {
+		defer workers.Done()
 		defer runCancel()
 		for runCtx.Err() == nil {
 			buf, err := ipConn.ReadPacket()
@@ -354,8 +341,52 @@ func (w *Masque) run(ctx context.Context) error {
 			}
 		}
 	}()
+	go func() {
+		workers.Wait()
+		close(session.done)
+	}()
 
 	return nil
+}
+
+// runDeviceReader is the only goroutine that reads packets from the shared TUN
+// device. Sessions may be replaced, but the reader itself lives until Close so
+// recovery can never leave two goroutines consuming the same packet stream.
+func (w *Masque) runDeviceReader() {
+	buf := pool.Get(pool.UDPBufferSize)
+	defer pool.Put(buf)
+	bufs := [][]byte{buf}
+	sizes := []int{0}
+	for w.runCtx.Err() == nil {
+		_, err := w.tunDevice.Read(bufs, sizes, 0)
+		if err != nil {
+			if w.runCtx.Err() == nil {
+				log.Errorln("[Masque](%s) 从 TUN 设备读取失败: %v", w.name, err)
+			}
+			return
+		}
+
+		w.runMutex.Lock()
+		session := w.session
+		w.runMutex.Unlock()
+		if session == nil {
+			continue
+		}
+
+		icmp, err := session.ipConn.WritePacket(buf[:sizes[0]])
+		if err != nil {
+			if !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.ErrClosedPipe) {
+				log.Warnln("[Masque](%s) 写入 IP 连接出错: %v", w.name, err)
+			}
+			session.cancel()
+			continue
+		}
+		if len(icmp) > 0 {
+			if _, err := w.tunDevice.Write([][]byte{icmp}, 0); err != nil {
+				log.Warnln("[Masque](%s) 向 TUN 写入 ICMP 失败: %v", w.name, err)
+			}
+		}
+	}
 }
 
 // Close implements C.ProxyAdapter
@@ -369,18 +400,17 @@ func (w *Masque) Close() error {
 
 func (w *Masque) ResetNetworkState() error {
 	w.runMutex.Lock()
-	cancel := w.sessionCancel
-	done := w.sessionDone
-	w.sessionCancel = nil
-	w.sessionDone = nil
+	session := w.session
+	w.session = nil
+	w.running.Store(false)
 	w.runMutex.Unlock()
 
-	if cancel != nil {
-		cancel()
+	if session != nil {
+		session.cancel()
 	}
-	if done != nil {
+	if session != nil {
 		select {
-		case <-done:
+		case <-session.done:
 		case <-time.After(2 * time.Second):
 		}
 	}
