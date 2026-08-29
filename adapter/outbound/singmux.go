@@ -2,6 +2,8 @@ package outbound
 
 import (
 	"context"
+	"errors"
+	"sync"
 
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/utils"
@@ -16,8 +18,11 @@ import (
 
 type SingMux struct {
 	ProxyAdapter
-	client  *mux.Client
-	onlyTcp bool
+	clientMu      sync.RWMutex
+	client        *mux.Client
+	clientOptions mux.Options
+	closed        bool
+	onlyTcp       bool
 }
 
 type SingMuxOption struct {
@@ -39,7 +44,11 @@ type BrutalOption struct {
 }
 
 func (s *SingMux) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn, err error) {
-	c, err := s.client.DialContext(ctx, "tcp", M.ParseSocksaddrHostPort(metadata.String(), metadata.DstPort))
+	client, err := s.currentClient()
+	if err != nil {
+		return nil, err
+	}
+	c, err := client.DialContext(ctx, "tcp", M.ParseSocksaddrHostPort(metadata.String(), metadata.DstPort))
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +62,11 @@ func (s *SingMux) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
 	if err = s.ProxyAdapter.ResolveUDP(ctx, metadata); err != nil {
 		return nil, err
 	}
-	pc, err := s.client.ListenPacket(ctx, M.SocksaddrFromNet(metadata.UDPAddr()))
+	client, err := s.currentClient()
+	if err != nil {
+		return nil, err
+	}
+	pc, err := client.ListenPacket(ctx, M.SocksaddrFromNet(metadata.UDPAddr()))
 	if err != nil {
 		return nil, err
 	}
@@ -85,10 +98,50 @@ func (s *SingMux) ProxyInfo() C.ProxyInfo {
 
 // Close implements C.ProxyAdapter
 func (s *SingMux) Close() error {
-	if s.client != nil {
-		_ = s.client.Close()
+	s.clientMu.Lock()
+	s.closed = true
+	client := s.client
+	s.client = nil
+	s.clientMu.Unlock()
+	if client != nil {
+		_ = client.Close()
 	}
 	return s.ProxyAdapter.Close()
+}
+
+func (s *SingMux) currentClient() (*mux.Client, error) {
+	s.clientMu.RLock()
+	defer s.clientMu.RUnlock()
+	if s.client == nil || s.closed {
+		return nil, errors.New("sing-mux client is closed")
+	}
+	return s.client, nil
+}
+
+func (s *SingMux) ResetNetworkState() error {
+	if resetter, ok := s.ProxyAdapter.(C.NetworkStateResetter); ok {
+		if err := resetter.ResetNetworkState(); err != nil {
+			return err
+		}
+	}
+	client, err := mux.NewClient(s.clientOptions)
+	if err != nil {
+		return err
+	}
+
+	s.clientMu.Lock()
+	if s.closed {
+		s.clientMu.Unlock()
+		_ = client.Close()
+		return nil
+	}
+	oldClient := s.client
+	s.client = client
+	s.clientMu.Unlock()
+	if oldClient != nil {
+		_ = oldClient.Close()
+	}
+	return nil
 }
 
 func NewSingMux(option SingMuxOption, proxy ProxyAdapter) (ProxyAdapter, error) {
@@ -96,7 +149,7 @@ func NewSingMux(option SingMuxOption, proxy ProxyAdapter) (ProxyAdapter, error) 
 	// "TCP Brutal is only supported on Linux-based systems"
 
 	singDialer := proxydialer.NewSingDialer(proxydialer.New(proxy, option.Statistic))
-	client, err := mux.NewClient(mux.Options{
+	clientOptions := mux.Options{
 		Dialer:         singDialer,
 		Logger:         log.SingLogger,
 		Protocol:       option.Protocol,
@@ -110,14 +163,16 @@ func NewSingMux(option SingMuxOption, proxy ProxyAdapter) (ProxyAdapter, error) 
 			SendBPS:    utils.StringToBps(option.BrutalOpts.Up),
 			ReceiveBPS: utils.StringToBps(option.BrutalOpts.Down),
 		},
-	})
+	}
+	client, err := mux.NewClient(clientOptions)
 	if err != nil {
 		return nil, err
 	}
 	outbound := &SingMux{
-		ProxyAdapter: proxy,
-		client:       client,
-		onlyTcp:      option.OnlyTcp,
+		ProxyAdapter:  proxy,
+		client:        client,
+		clientOptions: clientOptions,
+		onlyTcp:       option.OnlyTcp,
 	}
 	return outbound, nil
 }

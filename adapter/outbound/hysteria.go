@@ -269,6 +269,13 @@ func (h *Hysteria) Close() error {
 	return nil
 }
 
+func (h *Hysteria) ResetNetworkState() error {
+	if h.client == nil {
+		return nil
+	}
+	return h.client.ResetConnections()
+}
+
 type hyPacketConn struct {
 	core.UDPConn
 }

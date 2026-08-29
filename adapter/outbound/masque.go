@@ -42,11 +42,13 @@ type Masque struct {
 	uri         string
 	h2Transport *http.Transport
 
-	runCtx    context.Context
-	runCancel context.CancelFunc
-	runMutex  sync.Mutex
-	running   atomic.Bool
-	runDevice atomic.Bool
+	runCtx        context.Context
+	runCancel     context.CancelFunc
+	runMutex      sync.Mutex
+	sessionCancel context.CancelFunc
+	sessionDone   chan struct{}
+	running       atomic.Bool
+	runDevice     atomic.Bool
 
 	option MasqueOption
 }
@@ -291,6 +293,9 @@ func (w *Masque) run(ctx context.Context) error {
 	w.running.Store(true)
 
 	runCtx, runCancel := context.WithCancel(w.runCtx)
+	done := make(chan struct{})
+	w.sessionCancel = runCancel
+	w.sessionDone = done
 	contextutils.AfterFunc(runCtx, func() {
 		w.running.Store(false)
 		_ = ipConn.Close()
@@ -298,6 +303,7 @@ func (w *Masque) run(ctx context.Context) error {
 		if pc != nil {
 			_ = pc.Close()
 		}
+		close(done)
 	})
 
 	go func() {
@@ -357,6 +363,29 @@ func (w *Masque) Close() error {
 	w.runCancel()
 	if w.tunDevice != nil {
 		w.tunDevice.Close()
+	}
+	return nil
+}
+
+func (w *Masque) ResetNetworkState() error {
+	w.runMutex.Lock()
+	cancel := w.sessionCancel
+	done := w.sessionDone
+	w.sessionCancel = nil
+	w.sessionDone = nil
+	w.runMutex.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+		}
+	}
+	if w.h2Transport != nil {
+		w.h2Transport.CloseIdleConnections()
 	}
 	return nil
 }

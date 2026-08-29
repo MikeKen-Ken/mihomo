@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/metacubex/mihomo/component/resolver"
 	"github.com/metacubex/mihomo/log"
+	"github.com/metacubex/mihomo/networkrecovery"
 )
 
 // DNS 连续失败自愈监控。
@@ -14,9 +14,8 @@ import (
 // （既不返回也不报错）时，首个 in-flight 请求永不结束，相同问题的后续请求全部阻塞，
 // 旧行为最终表现为「所有 DNS 解析失败」，且只能通过重启进程清掉阻塞请求。
 //
-// 策略：短时间内出现连续失败达到阈值时，自动执行 ClearCache + ResetConnection。
-// ResetConnection 会忘记仍在等待的 singleflight key 并关闭僵死连接，让新查询立即使用新连接，
-// 而不是加入旧的阻塞请求。恢复始终限制在 DNS 子系统内，不重启核心或关闭无关的活动连接。
+// 策略：短时间内出现连续失败达到阈值时，先重置 DNS；恢复后仍连续失败时，
+// 通过 networkrecovery 升级为完整路由恢复。两级动作都带去重，避免恢复风暴。
 
 const (
 	// 触发自愈的连续失败次数阈值
@@ -51,6 +50,7 @@ func (h *healthMonitor) recordResult(success bool) {
 			h.failures = h.failures[:0]
 		}
 		h.lastHealAt = time.Time{}
+		networkrecovery.MarkHealthy()
 		return
 	}
 
@@ -84,13 +84,15 @@ func (h *healthMonitor) recordResult(success bool) {
 // trigger 必须在持有锁时调用。
 func (h *healthMonitor) trigger(now time.Time) {
 	if !h.lastHealAt.IsZero() && now.Sub(h.lastHealAt) < healRetryWindow {
-		log.Warnln("[DNS] Resolution failures continued after automatic recovery; retrying resolver recovery without interrupting active connections")
+		log.Warnln("[DNS] Resolution failures continued after automatic recovery; escalating network recovery")
 	} else {
 		log.Warnln("[DNS] Consecutive resolution failures detected; clearing cache and resetting upstream connections")
 	}
 
 	h.lastHealAt = now
 	h.quietUntil = now.Add(healGracePeriod)
-	resolver.ClearCache()
-	resolver.ResetConnection()
+	networkrecovery.Recover(networkrecovery.Request{
+		Kind:   networkrecovery.KindDNSFailure,
+		Reason: "consecutive upstream DNS failures",
+	})
 }

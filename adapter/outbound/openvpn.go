@@ -38,6 +38,7 @@ type OpenVPN struct {
 	runCancel context.CancelFunc
 	runLock   *semaphore.Weighted
 	running   bool
+	closed    bool
 }
 
 type OpenVPNOption struct {
@@ -194,15 +195,33 @@ func (o *OpenVPN) IsL3Protocol(metadata *C.Metadata) bool {
 }
 
 func (o *OpenVPN) Close() error {
+	return o.stopRuntime(false)
+}
+
+func (o *OpenVPN) ResetNetworkState() error {
+	return o.stopRuntime(true)
+}
+
+func (o *OpenVPN) stopRuntime(reopen bool) error {
 	if o.runCancel != nil {
 		o.runCancel()
 	}
 	_ = o.runLock.Acquire(context.Background(), 1)
+	if reopen && o.closed {
+		o.runLock.Release(1)
+		return nil
+	}
 	client := o.client
 	tunDevice := o.tunDevice
 	o.client = nil
 	o.tunDevice = nil
+	o.resolver = nil
 	o.running = false
+	if reopen {
+		o.runCtx, o.runCancel = context.WithCancel(context.Background())
+	} else {
+		o.closed = true
+	}
 	o.runLock.Release(1)
 
 	if client != nil {

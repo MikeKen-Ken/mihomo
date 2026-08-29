@@ -7,7 +7,7 @@ import (
 )
 
 // ResetNetworkState discards adapter-owned reusable sessions after the
-// underlying Android network changes. Proxy groups are intentionally skipped;
+// underlying network changes. Proxy groups are intentionally skipped;
 // only their leaf adapters own transport state.
 func ResetNetworkState() int {
 	configMux.RLock()
