@@ -15,7 +15,6 @@ func withConnectivityStatsDiskLock(fn func()) {
 	for {
 		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
 		if err != nil {
-			fn()
 			return
 		}
 		var ol windows.Overlapped
@@ -38,7 +37,6 @@ func withConnectivityStatsDiskLock(fn func()) {
 		}
 		_ = f.Close()
 		if time.Now().After(deadline) {
-			fn()
 			return
 		}
 		time.Sleep(15 * time.Millisecond)

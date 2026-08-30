@@ -35,11 +35,13 @@ type desktopProxyEntry struct {
 type desktopStatsFileV2 struct {
 	V    int                           `json:"v"`
 	Data map[string]desktopProxyEntry  `json:"data"`
+	Sync json.RawMessage               `json:"_sync,omitempty"`
 }
 
 var (
 	desktopStatsMu       sync.Mutex
 	desktopStatsCache    map[string]desktopProxyEntry
+	desktopStatsSync     json.RawMessage
 	desktopLastFailureAt map[string]time.Time
 )
 
@@ -98,23 +100,30 @@ func desktopPruneExpiredEntries(now time.Time) {
 	}
 }
 
-func desktopLoadStatsFromDisk() map[string]desktopProxyEntry {
-	cache := make(map[string]desktopProxyEntry)
+func desktopLoadStatsFromDisk() desktopStatsFileV2 {
+	empty := desktopStatsFileV2{
+		V:    2,
+		Data: make(map[string]desktopProxyEntry),
+	}
 	raw, err := os.ReadFile(desktopStatsPath())
 	if err == nil && len(raw) > 0 {
 		var file desktopStatsFileV2
 		if json.Unmarshal(raw, &file) == nil && file.V == 2 && file.Data != nil {
-			return file.Data
+			return file
 		}
 	}
-	return cache
+	return empty
 }
 
 func desktopPersistStats() {
 	if desktopStatsCache == nil {
 		return
 	}
-	payload := desktopStatsFileV2{V: 2, Data: desktopStatsCache}
+	payload := desktopStatsFileV2{
+		V:    2,
+		Data: desktopStatsCache,
+		Sync: desktopStatsSync,
+	}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return
@@ -151,7 +160,9 @@ func recordDesktopConnectivityStats(proxyName string, delay int, timeoutMs int) 
 
 	withConnectivityStatsDiskLock(func() {
 		// 持盘锁后从磁盘重载，避免与 UI 清空/写入互相覆盖
-		desktopStatsCache = desktopLoadStatsFromDisk()
+		file := desktopLoadStatsFromDisk()
+		desktopStatsCache = file.Data
+		desktopStatsSync = file.Sync
 		if desktopLastFailureAt == nil {
 			desktopLastFailureAt = make(map[string]time.Time)
 		}
