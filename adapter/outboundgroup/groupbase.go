@@ -304,16 +304,22 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 	if fn == nil {
 		return
 	}
-	if proxy == nil || testURL == "" {
-		fn()
-		return
-	}
 	if !gb.connectTesting.CompareAndSwap(false, true) {
 		return
 	}
 
+	proxyName := ""
+	if proxy != nil {
+		proxyName = proxy.Name()
+	}
+	log.Warnln("[App] %s precheck started\tgroup=%s\tproxy=%s", trigger, gb.Name(), proxyName)
+
 	go func() {
 		defer gb.connectTesting.Store(false)
+		if proxy == nil || testURL == "" {
+			fn()
+			return
+		}
 
 		timeoutMs := gb.TestTimeout
 		if timeoutMs <= 0 {
@@ -343,7 +349,7 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 		delay, testErr := runURLTest()
 		if testErr == nil {
 			log.Warnln("[App] %s check result\t%s\t%s\tsuccess\t%d", trigger, gb.Name(), proxy.Name(), delay)
-			gb.resetFailedTimesAfterPreCheckSuccess()
+			gb.resetFailedTimes()
 			return
 		}
 
@@ -353,7 +359,7 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 		retryDelay, retryErr := runURLTest()
 		if retryErr == nil {
 			log.Warnln("[App] %s check result\t%s\t%s\tsuccess\t%d", trigger, gb.Name(), proxy.Name(), retryDelay)
-			gb.resetFailedTimesAfterPreCheckSuccess()
+			gb.resetFailedTimes()
 			return
 		}
 
@@ -364,9 +370,10 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 	}()
 }
 
-func (gb *GroupBase) resetFailedTimesAfterPreCheckSuccess() {
+func (gb *GroupBase) resetFailedTimes() {
 	gb.failedTestMux.Lock()
 	gb.failedTimes = 0
+	gb.failedTime = time.Time{}
 	gb.failedTestMux.Unlock()
 }
 
@@ -441,53 +448,49 @@ func (gb *GroupBase) onDialFailed(ctx context.Context, adapterType C.AdapterType
 		return
 	}
 
-	go func() {
-		if gb.shouldSuppressDialFailureStats(ctx) {
-			return
-		}
+	gb.handleDialFailed(ctx, err, proxy, testURL, expectedStatus, fn)
+}
 
-		shouldPreCheck := false
-		if strings.Contains(err.Error(), "connection refused") {
-			log.Warnln("[App] max-failed-times threshold reached\tgroup=%s\treason=connection refused", gb.Name())
-			shouldPreCheck = true
-		} else {
-			gb.failedTestMux.Lock()
-			gb.failedTimes++
-			if gb.failedTimes == 1 {
-				log.Debugln("Proxy group %s first failure", gb.Name())
-				gb.failedTime = time.Now()
-				log.Warnln("[App] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
-				if gb.failedTimes >= gb.maxFailedTimes {
-					shouldPreCheck = true
-				}
-			} else {
-				if time.Since(gb.failedTime) > time.Duration(gb.failureResetInterval)*time.Millisecond {
-					log.Warnln("[App] max-failed-times reset\tgroup=%s\treason=window expired\tcount=%d", gb.Name(), gb.failedTimes)
-					gb.failedTimes = 0
-					gb.failedTestMux.Unlock()
-					return
-				}
+func (gb *GroupBase) handleDialFailed(ctx context.Context, err error, proxy C.Proxy, testURL, expectedStatus string, fn func()) {
+	if gb.shouldSuppressDialFailureStats(ctx) {
+		return
+	}
 
-				log.Debugln("Proxy group %s failure count: %d", gb.Name(), gb.failedTimes)
-				log.Warnln("[App] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
-				if gb.failedTimes >= gb.maxFailedTimes {
-					shouldPreCheck = true
-				}
+	shouldPreCheck := false
+	if strings.Contains(err.Error(), "connection refused") {
+		log.Warnln("[App] max-failed-times threshold reached\tgroup=%s\treason=connection refused", gb.Name())
+		shouldPreCheck = true
+	} else {
+		gb.failedTestMux.Lock()
+		gb.failedTimes++
+		if gb.failedTimes == 1 {
+			log.Debugln("Proxy group %s first failure", gb.Name())
+			gb.failedTime = time.Now()
+			log.Warnln("[App] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
+			if gb.failedTimes == gb.maxFailedTimes {
+				shouldPreCheck = true
 			}
-			gb.failedTestMux.Unlock()
-		}
+		} else {
+			if time.Since(gb.failedTime) > time.Duration(gb.failureResetInterval)*time.Millisecond {
+				log.Warnln("[App] max-failed-times reset\tgroup=%s\treason=window expired\tcount=%d", gb.Name(), gb.failedTimes)
+				gb.failedTimes = 0
+				gb.failedTime = time.Time{}
+				gb.failedTestMux.Unlock()
+				return
+			}
 
-		if !shouldPreCheck {
-			return
+			log.Debugln("Proxy group %s failure count: %d", gb.Name(), gb.failedTimes)
+			log.Warnln("[App] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
+			if gb.failedTimes == gb.maxFailedTimes {
+				shouldPreCheck = true
+			}
 		}
+		gb.failedTestMux.Unlock()
+	}
 
-		proxyName := ""
-		if proxy != nil {
-			proxyName = proxy.Name()
-		}
-		log.Warnln("[App] max-failed-times precheck started\tgroup=%s\tproxy=%s", gb.Name(), proxyName)
+	if shouldPreCheck {
 		gb.scheduleCurrentProxyPreHealthCheck(proxy, testURL, expectedStatus, "max-failed-times", false, fn)
-	}()
+	}
 }
 
 func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
@@ -523,7 +526,7 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 		}
 	}
 
-	gb.failedTimes = 0
+	gb.resetFailedTimes()
 	gb.resetConnectTimes()
 }
 
@@ -538,7 +541,7 @@ func (gb *GroupBase) healthCheckTargetNames() map[string]struct{} {
 
 func (gb *GroupBase) onDialSuccess() {
 	if !gb.failedTesting.Load() {
-		gb.failedTimes = 0
+		gb.resetFailedTimes()
 	}
 }
 
