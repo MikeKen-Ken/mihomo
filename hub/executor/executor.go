@@ -127,6 +127,20 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	resolver.ResetConnection()
 }
 
+// ApplyRulesOnly hot-swaps the rule matcher without suspending the tunnel,
+// recreating TUN/inbounds, or re-initializing providers. Existing connections
+// keep flowing; new connections use the updated rules immediately.
+func ApplyRulesOnly(cfg *config.Config) {
+	mux.Lock()
+	defer mux.Unlock()
+	providers := tunnel.RuleProviders()
+	if len(providers) == 0 {
+		providers = cfg.RuleProviders
+	}
+	updateRules(cfg.Rules, cfg.SubRules, providers)
+	log.Infoln("Rules updated without full config reload")
+}
+
 func initInnerTcp() {
 	inner.New(tunnel.Tunnel)
 }

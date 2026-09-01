@@ -1,6 +1,7 @@
 package route
 
 import (
+	"fmt"
 	"net/netip"
 	"path/filepath"
 
@@ -31,6 +32,44 @@ func configRouter() http.Handler {
 		r.Patch("/", patchConfigs)
 	}
 	return r
+}
+
+type configUpdateRequest struct {
+	Path    string `json:"path"`
+	Payload string `json:"payload"`
+}
+
+func loadRequestedConfig(r *http.Request) (*config.Config, int, error) {
+	req := configUpdateRequest{}
+	if err := render.DecodeJSON(r.Body, &req); err != nil {
+		return nil, http.StatusBadRequest, err
+	}
+
+	if req.Payload != "" {
+		cfg, err := executor.ParseWithBytes([]byte(req.Payload))
+		if err != nil {
+			return nil, http.StatusBadRequest, err
+		}
+		return cfg, http.StatusOK, nil
+	}
+
+	path := req.Path
+	if path == "" {
+		path = C.Path.Config()
+	} else {
+		if !filepath.IsAbs(path) {
+			return nil, http.StatusBadRequest, fmt.Errorf("path is not a absolute path")
+		}
+		if !C.Path.IsSafePath(path) {
+			return nil, http.StatusBadRequest, C.Path.ErrNotSafePath(path)
+		}
+	}
+
+	cfg, err := executor.ParseWithPath(path)
+	if err != nil {
+		return nil, http.StatusBadRequest, err
+	}
+	return cfg, http.StatusOK, nil
 }
 
 type configSchema struct {
@@ -385,52 +424,14 @@ func patchConfigs(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateConfigs(w http.ResponseWriter, r *http.Request) {
-	req := struct {
-		Path    string `json:"path"`
-		Payload string `json:"payload"`
-	}{}
-	if err := render.DecodeJSON(r.Body, &req); err != nil {
-		render.Status(r, http.StatusBadRequest)
-		render.JSON(w, r, ErrBadRequest)
+	cfg, status, err := loadRequestedConfig(r)
+	if err != nil {
+		render.Status(r, status)
+		render.JSON(w, r, newError(err.Error()))
 		return
 	}
 
 	force := r.URL.Query().Get("force") == "true"
-	var cfg *config.Config
-	var err error
-
-	if req.Payload != "" {
-		cfg, err = executor.ParseWithBytes([]byte(req.Payload))
-		if err != nil {
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, newError(err.Error()))
-			return
-		}
-	} else {
-		if req.Path == "" { // default path unneeded any safe check
-			req.Path = C.Path.Config()
-		} else {
-			if !filepath.IsAbs(req.Path) {
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, newError("path is not a absolute path"))
-				return
-			}
-
-			if !C.Path.IsSafePath(req.Path) {
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, newError(C.Path.ErrNotSafePath(req.Path).Error()))
-				return
-			}
-		}
-
-		cfg, err = executor.ParseWithPath(req.Path)
-		if err != nil {
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, newError(err.Error()))
-			return
-		}
-	}
-
 	executor.ApplyConfig(cfg, force)
 	render.NoContent(w, r)
 }
