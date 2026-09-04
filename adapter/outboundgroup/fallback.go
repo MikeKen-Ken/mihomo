@@ -21,7 +21,7 @@ type Fallback struct {
 	*GroupBase
 	disableUDP      bool
 	testUrl         string
-	selected        string // 手动选择的节点；仅当用户执行「组测速」时由 ClearManualSelection 清空，健康检测/连接失败不触发 fallback
+	selection       manualSelectionState
 	expectedStatus  string
 	selectedTimeout int // ms, for selected node only; 0 = use same as normal (AliveForTestUrl)
 }
@@ -33,16 +33,21 @@ func (f *Fallback) Now() string {
 
 // DialContext implements C.ProxyAdapter
 func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
-	proxy := f.findAliveProxy(true)
-	healthCheck := func() {
-		f.healthCheckForProxy(proxy)
+	proxy, selection := f.findAliveProxyWithSelection(true)
+	callbacks := proxyPrecheckCallbacks{
+		onSuccess: func() {
+			f.clearManualSelectionIfUnchanged(selection)
+		},
+		onFailure: func() {
+			f.healthCheckForProxy(proxy, selection)
+		},
 	}
 	c, err := proxy.DialContext(ctx, metadata)
 	needHandshake := err == nil && N.NeedHandshake(c)
 	if err == nil {
 		c.AppendToChains(f)
 	} else {
-		f.onDialFailed(ctx, proxy.Type(), err, proxy, f.testUrl, f.expectedStatus, healthCheck)
+		f.onDialFailedWithCallbacks(ctx, proxy.Type(), err, proxy, f.testUrl, f.expectedStatus, callbacks)
 	}
 
 	if needHandshake {
@@ -50,12 +55,12 @@ func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Con
 			if err == nil {
 				f.onDialSuccess()
 			} else {
-				f.onDialFailed(ctx, proxy.Type(), err, proxy, f.testUrl, f.expectedStatus, healthCheck)
+				f.onDialFailedWithCallbacks(ctx, proxy.Type(), err, proxy, f.testUrl, f.expectedStatus, callbacks)
 			}
 		})
 	}
 	if err == nil {
-		c = f.observePostConnectFailure(ctx, c, proxy.Type(), proxy, f.testUrl, f.expectedStatus, needHandshake, healthCheck)
+		c = f.observePostConnectFailureWithCallbacks(ctx, c, proxy.Type(), proxy, f.testUrl, f.expectedStatus, needHandshake, callbacks)
 	}
 
 	return c, err
@@ -73,19 +78,21 @@ func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata
 }
 
 func (f *Fallback) CountRequest(metadata *C.Metadata) {
-	proxy := f.findAliveProxy(true)
+	proxy, selection := f.findAliveProxyWithSelection(true)
 	f.onRequestAttempt(proxy, f.testUrl, f.expectedStatus, func() {
-		f.healthCheckForProxy(proxy)
+		f.healthCheckForProxy(proxy, selection)
 	})
 }
 
 func (f *Fallback) healthCheck() {
-	f.healthCheckForProxy(f.findAliveProxy(false))
+	proxy, selection := f.findAliveProxyWithSelection(false)
+	f.healthCheckForProxy(proxy, selection)
 }
 
-func (f *Fallback) healthCheckForProxy(proxy C.Proxy) {
+func (f *Fallback) healthCheckForProxy(proxy C.Proxy, selection manualSelectionSnapshot) {
 	if proxy == nil {
 		log.Warnln("[应用] fallback 范围健康检测\tgroup=%s\tproxy=<nil>\tscope=仅自身", f.Name())
+		f.clearManualSelectionIfUnchanged(selection)
 		f.GroupBase.healthCheck(f.testUrl, f.expectedStatus)
 		closed := statistic.DefaultManager.CloseConnectionsUsingProxyGroup(f.Name())
 		log.Warnln("[应用] fallback 范围关闭连接\tgroup=%s\tproxy=<nil>\tclosed=%d", f.Name(), closed)
@@ -93,21 +100,27 @@ func (f *Fallback) healthCheckForProxy(proxy C.Proxy) {
 	}
 
 	proxyName := proxy.Name()
-	groups := f.fallbackGroupsUsingProxy(proxyName)
-	groupNames := make([]string, 0, len(groups))
-	groupNamesLog := make([]string, 0, len(groups))
-	for _, group := range groups {
-		group.GroupBase.healthCheck(group.testUrl, group.expectedStatus)
-		groupNames = append(groupNames, group.Name())
-		groupNamesLog = append(groupNamesLog, group.Name())
+	targets := f.fallbackGroupsUsingProxy(proxyName, selection)
+	groupNames := make([]string, 0, len(targets))
+	groupNamesLog := make([]string, 0, len(targets))
+	for _, target := range targets {
+		target.group.clearManualSelectionIfUnchanged(target.selection)
+		target.group.GroupBase.healthCheck(target.group.testUrl, target.group.expectedStatus)
+		groupNames = append(groupNames, target.group.Name())
+		groupNamesLog = append(groupNamesLog, target.group.Name())
 	}
 	log.Warnln("[应用] fallback 范围健康检测\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s", f.Name(), proxyName, strings.Join(groupNamesLog, ","))
 	closed := statistic.DefaultManager.CloseConnectionsUsingProxyGroupsAndProxy(groupNames, proxyName)
 	log.Warnln("[应用] fallback 范围关闭连接\ttriggerGroup=%s\tproxy=%s\taffectedGroups=%s\tclosed=%d", f.Name(), proxyName, strings.Join(groupNamesLog, ","), closed)
 }
 
-func (f *Fallback) fallbackGroupsUsingProxy(proxyName string) []*Fallback {
-	groups := []*Fallback{f}
+type fallbackHealthCheckTarget struct {
+	group     *Fallback
+	selection manualSelectionSnapshot
+}
+
+func (f *Fallback) fallbackGroupsUsingProxy(proxyName string, selection manualSelectionSnapshot) []fallbackHealthCheckTarget {
+	groups := []fallbackHealthCheckTarget{{group: f, selection: selection}}
 	seen := map[*Fallback]struct{}{f: {}}
 	for _, proxy := range tunnel.Proxies() {
 		group, ok := proxy.Adapter().(*Fallback)
@@ -117,12 +130,12 @@ func (f *Fallback) fallbackGroupsUsingProxy(proxyName string) []*Fallback {
 		if _, ok := seen[group]; ok {
 			continue
 		}
-		current := group.findAliveProxy(false)
+		current, currentSelection := group.findAliveProxyWithSelection(false)
 		if current == nil || current.Name() != proxyName {
 			continue
 		}
 		seen[group] = struct{}{}
-		groups = append(groups, group)
+		groups = append(groups, fallbackHealthCheckTarget{group: group, selection: currentSelection})
 	}
 	return groups
 }
@@ -154,7 +167,7 @@ func (f *Fallback) MarshalJSON() ([]byte, error) {
 		"all":             all,
 		"testUrl":         f.testUrl,
 		"expectedStatus":  f.expectedStatus,
-		"fixed":           f.selected,
+		"fixed":           f.selection.snapshot().name,
 		"selectedTimeout": f.selectedTimeout,
 		"hidden":          f.Hidden(),
 		"icon":            f.Icon(),
@@ -174,29 +187,35 @@ func (f *Fallback) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 }
 
 func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
+	proxy, _ := f.findAliveProxyWithSelection(touch)
+	return proxy
+}
+
+func (f *Fallback) findAliveProxyWithSelection(touch bool) (C.Proxy, manualSelectionSnapshot) {
 	proxies := f.GetProxies(touch)
 	timeoutMs := f.TestTimeout
 	if timeoutMs <= 0 {
 		timeoutMs = 5000
 	}
 
-	// 手动选择模式：无条件返回用户选择的节点
-	// 健康检测由 Set() 的异步 goroutine 负责，这里不阻止用户的选择
-	if len(f.selected) > 0 {
+	// 手动选择模式：节点仍可用时固定使用。max-failed-times 健康检测会清钉。
+	selection := f.selection.snapshot()
+	if selection.name != "" {
 		for _, proxy := range proxies {
-			if proxy.Name() == f.selected {
-				return proxy // 直接返回，不检查延迟或健康状态
+			if proxy.Name() == selection.name {
+				return proxy, selection // 直接返回，不检查延迟或健康状态
 			}
 		}
 		// 选择的节点不存在于列表中（可能被移除），清空选择
-		f.selected = ""
+		f.clearManualSelectionIfUnchanged(selection)
+		selection = manualSelectionSnapshot{}
 	}
 
 	// 自动模式：返回第一个可用的节点
 	for _, proxy := range proxies {
 		// Only use proxy if alive and delay is within group timeout
 		if proxy.AliveForTestUrl(f.testUrl) && proxy.LastDelayForTestUrl(f.testUrl) <= uint16(timeoutMs) {
-			return proxy
+			return proxy, selection
 		}
 	}
 
@@ -211,9 +230,9 @@ func (f *Fallback) findAliveProxy(touch bool) C.Proxy {
 		}
 	}
 	if best != nil {
-		return best
+		return best, selection
 	}
-	return proxies[0]
+	return proxies[0], selection
 }
 
 func (f *Fallback) Set(name string) error {
@@ -229,8 +248,8 @@ func (f *Fallback) Set(name string) error {
 		return errors.New("proxy not exist")
 	}
 
-	// 立即切换到用户选择的节点并固定使用，  不因健康检测/连接失败而触发 fallback；仅当用户执行「组测速」时由 ClearManualSelection 清空
-	f.selected = name
+	// 立即切换到用户选择的节点并固定使用。拨号失败本身不换节点；max-failed-times 健康检测会清钉。
+	f.selection.set(name)
 
 	// 异步健康检测：仅用于更新延迟显示，不根据结果修改 selected
 	go func() {
@@ -254,17 +273,23 @@ func (f *Fallback) Set(name string) error {
 }
 
 func (f *Fallback) ForceSet(name string) {
-	f.selected = name
+	f.selection.set(name)
 }
 
 // NowIsManual implements NowIsManualAble.
 func (f *Fallback) NowIsManual() bool {
-	return f.selected != ""
+	return f.selection.snapshot().name != ""
 }
 
 // ClearManualSelection clears the fixed selected node so the group auto-picks first alive.
 func (f *Fallback) ClearManualSelection() {
-	f.selected = ""
+	f.selection.clear()
+}
+
+func (f *Fallback) clearManualSelectionIfUnchanged(selection manualSelectionSnapshot) {
+	if f.selection.clearIfUnchanged(selection) {
+		f.onManualSelectionCleared()
+	}
 }
 
 func (f *Fallback) Providers() []P.ProxyProvider {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -24,11 +25,12 @@ func urlTestWithTolerance(tolerance uint16) urlTestOption {
 
 type URLTest struct {
 	*GroupBase
-	selected       string
+	selection      manualSelectionState
 	testUrl        string
 	expectedStatus string
 	tolerance      uint16
 	disableUDP     bool
+	fastNodeMux    sync.Mutex
 	fastNode       C.Proxy
 	fastSingle     *singledo.Single[C.Proxy]
 }
@@ -53,27 +55,37 @@ func (u *URLTest) Set(name string) error {
 }
 
 func (u *URLTest) ForceSet(name string) {
-	u.selected = name
+	u.selection.set(name)
 	u.fastSingle.Reset()
 }
 
 // ClearManualSelection releases the pin and drops the cached fast node so
 // the next Dial uses live auto-select instead of the previously pinned proxy.
 func (u *URLTest) ClearManualSelection() {
-	u.selected = ""
+	u.selection.clear()
+	u.fastNodeMux.Lock()
 	u.fastNode = nil
+	u.fastNodeMux.Unlock()
 	u.fastSingle.Reset()
 }
 
 // DialContext implements C.ProxyAdapter
 func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
-	proxy := u.fast(true)
+	proxy, selection := u.fastWithSelection(true)
+	callbacks := proxyPrecheckCallbacks{
+		onSuccess: func() {
+			u.clearManualSelectionIfUnchanged(selection)
+		},
+		onFailure: func() {
+			u.healthCheckForSelection(selection)
+		},
+	}
 	c, err = proxy.DialContext(ctx, metadata)
 	needHandshake := err == nil && N.NeedHandshake(c)
 	if err == nil {
 		c.AppendToChains(u)
 	} else {
-		u.onDialFailed(ctx, proxy.Type(), err, proxy, u.testUrl, u.expectedStatus, u.healthCheck)
+		u.onDialFailedWithCallbacks(ctx, proxy.Type(), err, proxy, u.testUrl, u.expectedStatus, callbacks)
 	}
 
 	if needHandshake {
@@ -81,12 +93,12 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 			if err == nil {
 				u.onDialSuccess()
 			} else {
-				u.onDialFailed(ctx, proxy.Type(), err, proxy, u.testUrl, u.expectedStatus, u.healthCheck)
+				u.onDialFailedWithCallbacks(ctx, proxy.Type(), err, proxy, u.testUrl, u.expectedStatus, callbacks)
 			}
 		})
 	}
 	if err == nil {
-		c = u.observePostConnectFailure(ctx, c, proxy.Type(), proxy, u.testUrl, u.expectedStatus, needHandshake, u.healthCheck)
+		c = u.observePostConnectFailureWithCallbacks(ctx, c, proxy.Type(), proxy, u.testUrl, u.expectedStatus, needHandshake, callbacks)
 	}
 
 	return c, err
@@ -94,19 +106,29 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 
 // ListenPacketContext implements C.ProxyAdapter
 func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
-	proxy := u.fast(true)
+	proxy, selection := u.fastWithSelection(true)
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(u)
 	} else {
-		u.onDialFailed(ctx, proxy.Type(), err, proxy, u.testUrl, u.expectedStatus, u.healthCheck)
+		u.onDialFailedWithCallbacks(ctx, proxy.Type(), err, proxy, u.testUrl, u.expectedStatus, proxyPrecheckCallbacks{
+			onSuccess: func() {
+				u.clearManualSelectionIfUnchanged(selection)
+			},
+			onFailure: func() {
+				u.healthCheckForSelection(selection)
+			},
+		})
 	}
 
 	return pc, err
 }
 
 func (u *URLTest) CountRequest(metadata *C.Metadata) {
-	u.onRequestAttempt(u.fast(true), u.testUrl, u.expectedStatus, u.healthCheck)
+	proxy, selection := u.fastWithSelection(true)
+	u.onRequestAttempt(proxy, u.testUrl, u.expectedStatus, func() {
+		u.healthCheckForSelection(selection)
+	})
 }
 
 // Unwrap implements C.ProxyAdapter
@@ -115,28 +137,53 @@ func (u *URLTest) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 }
 
 func (u *URLTest) healthCheck() {
-	u.fastSingle.Reset()
+	u.healthCheckForSelection(u.selection.snapshot())
+}
+
+func (u *URLTest) healthCheckForSelection(selection manualSelectionSnapshot) {
+	u.clearManualSelectionIfUnchanged(selection)
 	u.GroupBase.healthCheck(u.testUrl, u.expectedStatus)
 	u.fastSingle.Reset()
 }
 
 // NowIsManual implements NowIsManualAble.
 func (u *URLTest) NowIsManual() bool {
-	return u.selected != ""
+	return u.selection.snapshot().name != ""
+}
+
+func (u *URLTest) clearManualSelectionIfUnchanged(selection manualSelectionSnapshot) {
+	if !u.selection.clearIfUnchanged(selection) {
+		return
+	}
+	u.fastNodeMux.Lock()
+	u.fastNode = nil
+	u.fastNodeMux.Unlock()
+	u.fastSingle.Reset()
+	u.onManualSelectionCleared()
+}
+
+func (u *URLTest) fastWithSelection(touch bool) (C.Proxy, manualSelectionSnapshot) {
+	proxy := u.fast(touch)
+	return proxy, u.selection.snapshot()
 }
 
 func (u *URLTest) fast(touch bool) C.Proxy {
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
+		u.fastNodeMux.Lock()
 		proxies := u.GetProxies(touch)
 		// 手动选择：立即生效，不等待该节点测速完成（与 Fallback 一致）
-		if u.selected != "" {
+		selection := u.selection.snapshot()
+		clearedSelection := false
+		if selection.name != "" {
 			for _, proxy := range proxies {
-				if proxy.Name() == u.selected {
+				if proxy.Name() == selection.name {
 					u.fastNode = proxy
+					u.fastNodeMux.Unlock()
 					return proxy, nil
 				}
 			}
-			u.selected = ""
+			clearedSelection = u.selection.clearIfUnchanged(selection)
+			u.fastNode = nil
 		}
 
 		fast := proxies[0]
@@ -163,7 +210,12 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		if u.fastNode == nil || fastNotExist || !u.fastNode.AliveForTestUrl(u.testUrl) || u.fastNode.LastDelayForTestUrl(u.testUrl) > fast.LastDelayForTestUrl(u.testUrl)+u.tolerance {
 			u.fastNode = fast
 		}
-		return u.fastNode, nil
+		result := u.fastNode
+		u.fastNodeMux.Unlock()
+		if clearedSelection {
+			u.onManualSelectionCleared()
+		}
+		return result, nil
 	})
 	if shared && touch { // a shared fastSingle.Do() may cause providers untouched, so we touch them again
 		u.Touch()
@@ -197,7 +249,7 @@ func (u *URLTest) MarshalJSON() ([]byte, error) {
 		"all":             all,
 		"testUrl":         u.testUrl,
 		"expectedStatus":  u.expectedStatus,
-		"fixed":           u.selected,
+		"fixed":           u.selection.snapshot().name,
 		"hidden":          u.Hidden(),
 		"icon":            u.Icon(),
 		"connectTimes":    u.ConnectTimes(),

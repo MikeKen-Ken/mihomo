@@ -157,6 +157,74 @@ func TestFailureCounterConcurrentReset(t *testing.T) {
 	}
 }
 
+func TestExpiredFailureWindowCountsTheCurrentFailure(t *testing.T) {
+	gb := NewGroupBase(GroupBaseOption{
+		Name:                 "test-group",
+		Type:                 C.Fallback,
+		FailureResetInterval: 20,
+		MaxFailedTimes:       2,
+	})
+	dialErr := errors.New("test dial failure")
+
+	gb.onDialFailed(context.Background(), C.Shadowsocks, dialErr, nil, "", "", nil)
+	time.Sleep(30 * time.Millisecond)
+
+	var healthChecks atomic.Int32
+	gb.onDialFailed(context.Background(), C.Shadowsocks, dialErr, nil, "", "", func() {
+		healthChecks.Add(1)
+	})
+
+	gb.failedTestMux.Lock()
+	got := gb.failedTimes
+	gb.failedTestMux.Unlock()
+	if got != 1 {
+		t.Fatalf("failure count after window expiry = %d, want 1 for the new window's first failure", got)
+	}
+	if healthChecks.Load() != 0 {
+		t.Fatalf("health check callbacks = %d, want 0 until the new window reaches max-failed-times", healthChecks.Load())
+	}
+
+	gb.onDialFailed(context.Background(), C.Shadowsocks, dialErr, nil, "", "", func() {
+		healthChecks.Add(1)
+	})
+	gb.failedTestMux.Lock()
+	got = gb.failedTimes
+	gb.failedTestMux.Unlock()
+	if got != 2 {
+		t.Fatalf("failure count after second failure in new window = %d, want 2", got)
+	}
+	waitForCondition(t, time.Second, func() bool {
+		return !gb.connectTesting.Load()
+	})
+	if got := healthChecks.Load(); got != 1 {
+		t.Fatalf("health check callbacks at the new window threshold = %d, want 1", got)
+	}
+}
+
+func TestFailureAboveThresholdDoesNotStartAnotherPrecheck(t *testing.T) {
+	gb := NewGroupBase(GroupBaseOption{
+		Name:                 "test-group",
+		Type:                 C.Fallback,
+		FailureResetInterval: 5000,
+		MaxFailedTimes:       1,
+	})
+	dialErr := errors.New("test dial failure")
+
+	gb.onDialFailed(context.Background(), C.Shadowsocks, dialErr, nil, "", "", nil)
+
+	var healthChecks atomic.Int32
+	gb.onDialFailed(context.Background(), C.Shadowsocks, dialErr, nil, "", "", func() {
+		healthChecks.Add(1)
+	})
+	waitForCondition(t, time.Second, func() bool {
+		return !gb.connectTesting.Load()
+	})
+
+	if got := healthChecks.Load(); got != 0 {
+		t.Fatalf("health check callbacks above threshold = %d, want 0", got)
+	}
+}
+
 func TestDialFailureBookkeepingCompletesBeforeReturn(t *testing.T) {
 	gb := NewGroupBase(GroupBaseOption{
 		Name:                 "test-group",
