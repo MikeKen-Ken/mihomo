@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
@@ -20,6 +19,8 @@ import (
 	"github.com/metacubex/http"
 )
 
+// UnifiedDelay is kept for mihomo config apply. URLTest ignores it and always
+// measures dial start through the first HTTP response.
 var UnifiedDelay = atomic.NewBool(false)
 
 const (
@@ -225,17 +226,19 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		recordProxyConnectivityTest(p.Name(), delayVal, timeoutMs)
 	}()
 
-	unifiedDelay := UnifiedDelay.Load()
-
 	addr, err := urlToMetadata(url)
 	if err != nil {
 		return
 	}
 
+	if _, ok := C.DelayTestTimeoutMs(ctx); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+		defer cancel()
+	}
+
 	start := time.Now()
-	dialCtx, cancelDial := delayTestPhaseContext(ctx, timeoutMs)
-	instance, err := p.DialContext(dialCtx, &addr)
-	cancelDial()
+	instance, err := p.DialContext(ctx, &addr)
 	if err != nil {
 		return
 	}
@@ -252,20 +255,20 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		return
 	}
 
+	phaseTimeout := time.Duration(timeoutMs) * time.Millisecond
 	transport := &http.Transport{
 		DialContext: func(context.Context, string, string) (net.Conn, error) {
 			return instance, nil
 		},
-		// from http.DefaultTransport
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
+		TLSHandshakeTimeout:   phaseTimeout,
 		ExpectContinueTimeout: 1 * time.Second,
 		TLSClientConfig:       tlsConfig,
 	}
 
 	client := http.Client{
-		Timeout:   30 * time.Second,
+		Timeout:   phaseTimeout,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -274,36 +277,11 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 
 	defer client.CloseIdleConnections()
 
-	doRequest := func() (*http.Response, error) {
-		requestCtx, cancelRequest := delayTestPhaseContext(ctx, timeoutMs)
-		defer cancelRequest()
-		return client.Do(req.Clone(requestCtx))
-	}
-
-	resp, err := doRequest()
-
+	resp, err := client.Do(req.Clone(ctx))
 	if err != nil {
 		return
 	}
-
 	_ = resp.Body.Close()
-
-	if unifiedDelay {
-		second := time.Now()
-		var ignoredErr error
-		var secondResp *http.Response
-		secondResp, ignoredErr = doRequest()
-		if ignoredErr == nil {
-			resp = secondResp
-			_ = resp.Body.Close()
-			start = second
-		} else {
-			if strings.HasPrefix(url, "http://") {
-				log.Errorln("%s failed to receive the second response from %s: %v", p.Name(), url, ignoredErr)
-				log.Warnln("Using HTTPS for provider.health-check.url and group.url is recommended; some providers hijack test URLs and do not support repeated HEAD requests, so HTTP may cause health checks to fail.")
-			}
-		}
-	}
 
 	satisfied = resp != nil && (expectedStatus == nil || expectedStatus.Check(uint16(resp.StatusCode)))
 	t = uint16(time.Since(start) / time.Millisecond)
@@ -316,13 +294,6 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 
 func delayReachedTimeout(delay uint16, timeoutMs int) bool {
 	return timeoutMs > 0 && int(delay) >= timeoutMs
-}
-
-func delayTestPhaseContext(ctx context.Context, timeoutMs int) (context.Context, context.CancelFunc) {
-	if configuredTimeoutMs, ok := C.DelayTestTimeoutMs(ctx); ok {
-		return context.WithTimeout(ctx, time.Duration(configuredTimeoutMs)*time.Millisecond)
-	}
-	return context.WithCancel(ctx)
 }
 
 func NewProxy(adapter C.ProxyAdapter) *Proxy {

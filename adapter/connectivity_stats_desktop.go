@@ -29,7 +29,8 @@ type desktopDayCounts struct {
 }
 
 type desktopProxyEntry struct {
-	Days map[string]desktopDayCounts `json:"days"`
+	Days          map[string]desktopDayCounts `json:"days"`
+	LastSuccessAt int64                       `json:"ls,omitempty"`
 }
 
 type desktopStatsFileV2 struct {
@@ -185,6 +186,7 @@ func recordDesktopConnectivityStats(proxyName string, delay int, timeoutMs int) 
 		if isSuccess {
 			counts.Success++
 			counts.DelaySum += delay
+			entry.LastSuccessAt = now.Unix()
 		} else {
 			counts.Failure++
 			counts.DelaySum += effectiveTimeout
