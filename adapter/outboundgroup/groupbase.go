@@ -18,6 +18,7 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 	"github.com/metacubex/mihomo/log"
+	"github.com/metacubex/mihomo/networkrecovery"
 	"github.com/metacubex/mihomo/tunnel"
 
 	"github.com/dlclark/regexp2"
@@ -342,6 +343,8 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 		}
 
 		started := time.Now()
+		gb.traffic.beginCheck(proxyName)
+		defer gb.traffic.endCheck()
 		runURLTest := func(url string, expected utils.IntRanges[uint16]) (uint16, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
 			defer cancel()
@@ -369,6 +372,7 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 		log.Warnln("[App] %s retry\tgroup=%s\tproxy=%s\treason=initial check failed", trigger, gb.Name(), proxy.Name())
 
 		if gb.traffic.receivedSince(proxyName, started) {
+			networkrecovery.RecordEvent("traffic-veto", started)
 			gb.resetFailedTimes()
 			return
 		}
@@ -381,6 +385,7 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 			return
 		}
 		if gb.traffic.receivedSince(proxyName, started) {
+			networkrecovery.RecordEvent("traffic-veto", started)
 			gb.resetFailedTimes()
 			return
 		}
@@ -557,6 +562,11 @@ func (gb *GroupBase) healthCheckCandidate(testURL string, expectedStatusText str
 
 	gb.resetFailedTimes()
 	gb.resetConnectTimes()
+	if ready == nil {
+		networkrecovery.RecordEvent("backup-unavailable", started)
+	} else {
+		networkrecovery.RecordEvent("backup-verified", started)
+	}
 	return ready
 }
 

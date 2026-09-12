@@ -137,6 +137,7 @@ func (m *Manager) Status() Report {
 }
 
 func (m *Manager) Recover(request Request) Report {
+	started := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.observeTrafficLocked()
@@ -175,6 +176,7 @@ func (m *Manager) Recover(request Request) Report {
 	m.sequence++
 	report.Sequence = m.sequence
 	m.lastReport = report
+	RecordEvent(report.Action, started)
 
 	log.Infoln(
 		"[Network] recovery kind=%s action=%s reason=%s coalesced=%t reset-adapters=%d",

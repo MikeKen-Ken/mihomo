@@ -13,6 +13,7 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 	"github.com/metacubex/mihomo/log"
+	"github.com/metacubex/mihomo/networkrecovery"
 	"github.com/metacubex/mihomo/tunnel"
 	"github.com/metacubex/mihomo/tunnel/statistic"
 )
@@ -110,12 +111,16 @@ func (f *Fallback) healthCheckForProxy(proxy C.Proxy, selection manualSelectionS
 	groupNames := make([]string, 0, len(targets))
 	groupNamesLog := make([]string, 0, len(targets))
 	for _, target := range targets {
+		started := time.Now()
 		candidate := target.group.GroupBase.healthCheckCandidate(target.group.testUrl, target.group.expectedStatus)
 		if candidate == nil {
 			continue
 		}
 		target.group.stable.remember(candidate.Name())
 		target.group.clearManualSelectionIfUnchanged(target.selection)
+		if candidate.Name() != proxyName && target.group.selection.snapshot().name == "" {
+			networkrecovery.RecordEvent("switch", started)
+		}
 		if candidate.Name() == proxyName {
 			continue
 		}

@@ -13,6 +13,9 @@ import (
 func networkRouter() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/status", getNetworkRecoveryStatus)
+	r.Get("/diagnostics", func(w http.ResponseWriter, r *http.Request) {
+		render.JSON(w, r, networkrecovery.Diagnostics())
+	})
 	r.Post("/recover", recoverNetwork)
 	return r
 }

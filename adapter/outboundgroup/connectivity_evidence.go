@@ -10,12 +10,26 @@ import (
 	"github.com/metacubex/mihomo/networkrecovery"
 )
 
-// Keep only the latest observed proxy: this is bounded regardless of provider size.
+// Keep the latest proxy plus the proxy under investigation, regardless of provider size.
 type trafficEvidence struct {
 	mu             sync.Mutex
 	proxy          string
 	at             time.Time
 	coreReportedAt time.Time
+	checking       string
+	checkedAt      time.Time
+}
+
+func (e *trafficEvidence) beginCheck(proxy string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.checking, e.checkedAt = proxy, time.Time{}
+}
+
+func (e *trafficEvidence) endCheck() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.checking, e.checkedAt = "", time.Time{}
 }
 
 func recordProbeHealth(proxy C.Proxy, url string, delay uint16, healthy bool) {
@@ -32,6 +46,9 @@ func (e *trafficEvidence) record(proxy string) {
 		e.coreReportedAt = now
 	}
 	e.proxy, e.at = proxy, now
+	if e.checking == proxy {
+		e.checkedAt = now
+	}
 	e.mu.Unlock()
 	if markCore {
 		networkrecovery.MarkTrafficHealthy()
@@ -41,7 +58,8 @@ func (e *trafficEvidence) record(proxy string) {
 func (e *trafficEvidence) receivedSince(proxy string, since time.Time) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.proxy == proxy && !e.at.Before(since)
+	return (e.proxy == proxy && !e.at.Before(since)) ||
+		(e.checking == proxy && !e.checkedAt.IsZero() && !e.checkedAt.Before(since))
 }
 
 // Confirmation deliberately uses a different operator from the group endpoint.

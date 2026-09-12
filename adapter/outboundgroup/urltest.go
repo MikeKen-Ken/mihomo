@@ -13,6 +13,7 @@ import (
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
+	"github.com/metacubex/mihomo/networkrecovery"
 )
 
 type urlTestOption func(*URLTest)
@@ -143,6 +144,12 @@ func (u *URLTest) healthCheck() {
 }
 
 func (u *URLTest) healthCheckForSelection(selection manualSelectionSnapshot) {
+	started, previous := time.Now(), selection.name
+	u.fastNodeMux.Lock()
+	if previous == "" && u.fastNode != nil {
+		previous = u.fastNode.Name()
+	}
+	u.fastNodeMux.Unlock()
 	candidate := u.GroupBase.healthCheckCandidate(u.testUrl, u.expectedStatus)
 	if candidate == nil {
 		return
@@ -150,6 +157,9 @@ func (u *URLTest) healthCheckForSelection(selection manualSelectionSnapshot) {
 	u.recoveryHold.remember(candidate.Name())
 	u.clearManualSelectionIfUnchanged(selection)
 	u.fastSingle.Reset()
+	if previous != "" && candidate.Name() != previous && u.selection.snapshot().name == "" {
+		networkrecovery.RecordEvent("switch", started)
+	}
 }
 
 // NowIsManual implements NowIsManualAble.
