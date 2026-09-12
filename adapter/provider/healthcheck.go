@@ -155,7 +155,7 @@ func (hc *HealthCheck) checkURLUntilHealthy(url string, expectedStatus utils.Int
 	id := utils.NewUUIDV4().String()
 	log.Infoln("[%s] 开始健康检测（持续至健康）{%s}", hc.name, id)
 	option := hc.optionForURL(url, expectedStatus)
-	foundHealthy := hc.execute(url, id, option, true, targetNames)
+	foundHealthy := hc.execute(url, id, option, true, targetNames, true)
 	log.Infoln("[%s] 健康检测完成（持续至健康）{%s}", hc.name, id)
 	return foundHealthy
 }
@@ -171,11 +171,11 @@ func (hc *HealthCheck) checkAll() {
 		log.Infoln("[%s] 开始健康检测（命中可用节点后按批次提前结束）{%s}", hc.name, id)
 
 		option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
-		hc.execute(hc.url, id, option, true, nil)
+		hc.execute(hc.url, id, option, true, nil, false)
 
 		if len(hc.extra) != 0 {
 			for url, option := range hc.extra {
-				hc.execute(url, id, option, true, nil)
+				hc.execute(url, id, option, true, nil, false)
 			}
 		}
 		log.Infoln("[%s] 健康检测完成 {%s}", hc.name, id)
@@ -217,7 +217,7 @@ func cloneExtraOption(option *extraOption) *extraOption {
 	return clone
 }
 
-func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirstHealthy bool, targetNames map[string]struct{}) bool {
+func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirstHealthy bool, targetNames map[string]struct{}, recovery bool) bool {
 	url = strings.TrimSpace(url)
 	if len(url) == 0 {
 		log.Infoln("[%s] 健康检测跳过，testUrl 为空 {%s}", hc.name, uid)
@@ -257,6 +257,9 @@ func (hc *HealthCheck) execute(url, uid string, option *extraOption, stopOnFirst
 
 	if len(targets) == 0 {
 		return false
+	}
+	if recovery {
+		return hc.recoverCandidates(url, expectedStatus, targets)
 	}
 
 	workerLimit := EffectiveHealthCheckWorkerLimit()

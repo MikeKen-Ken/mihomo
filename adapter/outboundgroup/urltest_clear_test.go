@@ -22,7 +22,7 @@ func TestURLTestClearManualSelectionResetsFastCache(t *testing.T) {
 	}
 }
 
-func TestURLTestHealthCheckClearsPin(t *testing.T) {
+func TestURLTestHealthCheckPreservesPinWithoutVerifiedReplacement(t *testing.T) {
 	u := &URLTest{
 		GroupBase:  NewGroupBase(GroupBaseOption{Name: "Auto", Type: C.URLTest}),
 		fastSingle: singledo.NewSingle[C.Proxy](time.Second * 10),
@@ -30,7 +30,7 @@ func TestURLTestHealthCheckClearsPin(t *testing.T) {
 	u.selectionPersistence = nil
 	u.ForceSet("node-a")
 	u.healthCheck()
-	if got := u.selection.snapshot().name; got != "" {
-		t.Fatalf("selected should be empty after health check, got %q", got)
+	if got := u.selection.snapshot().name; got != "node-a" {
+		t.Fatalf("selection changed without a verified replacement: %q", got)
 	}
 }

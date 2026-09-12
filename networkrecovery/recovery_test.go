@@ -90,3 +90,43 @@ func TestFullRecoveryIsDebouncedAndReportsErrors(t *testing.T) {
 		t.Fatalf("debounced route recovery = %#v, route resets = %d", second, actions.routeResets)
 	}
 }
+
+func TestDNSOnlyChangePreservesEstablishedConnections(t *testing.T) {
+	actions := &fakeActions{}
+	m := newManager(actions, time.Now)
+	r := m.Recover(Request{Kind: KindDNSChanged})
+	if r.ClosedConnections || actions.routeResets != 0 || actions.dnsResets != 1 {
+		t.Fatalf("DNS change disrupted routes: %#v", r)
+	}
+}
+
+func TestWorkingTrafficPreventsDNSFailureFromClosingTunnels(t *testing.T) {
+	now := time.Unix(4000, 0)
+	actions := &fakeActions{}
+	m := newManager(actions, func() time.Time { return now })
+	m.MarkTrafficHealthy()
+	for i := 0; i < 3; i++ {
+		now = now.Add(5 * time.Second)
+		r := m.Recover(Request{Kind: KindDNSFailure})
+		if r.ClosedConnections || r.RestartRecommended {
+			t.Fatalf("working traffic was interrupted: %#v", r)
+		}
+	}
+	now = now.Add(31 * time.Second)
+	if !m.Recover(Request{Kind: KindDNSFailure}).ClosedConnections {
+		t.Fatal("stale success prevented real recovery")
+	}
+}
+
+func TestTrafficReadNeverWaitsForRecoveryLock(t *testing.T) {
+	m := newManager(&fakeActions{}, time.Now)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	done := make(chan struct{})
+	go func() { m.MarkTrafficHealthy(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("application read waited for recovery's connection-close lock")
+	}
+}

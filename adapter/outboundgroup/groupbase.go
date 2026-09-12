@@ -54,6 +54,7 @@ type GroupBase struct {
 	maxFailedTimes       int
 	maxConnectTimes      int
 	selectionPersistence manualSelectionPersistence
+	traffic              trafficEvidence
 
 	// for GetProxies
 	getProxiesMutex  sync.Mutex
@@ -305,7 +306,7 @@ func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedSta
 	gb.scheduleCurrentProxyPreHealthCheck(proxy, testURL, expectedStatus, "max-connect-times", true, proxyPrecheckCallbacks{onFailure: fn})
 }
 
-// scheduleCurrentProxyPreHealthCheck 对当前节点 URL 测速两次，均失败才执行 fn（健康检查）。
+// Confirm failure at independent destinations before triggering group recovery.
 // trigger 用于日志区分 max-connect-times / max-failed-times；notifyUI 仅 max-connect-times 通知客户端。
 func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, expectedStatus, trigger string, notifyUI bool, callbacks proxyPrecheckCallbacks) {
 	if callbacks.onFailure == nil {
@@ -340,12 +341,12 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 			return
 		}
 
-		runURLTest := func() (uint16, error) {
+		started := time.Now()
+		runURLTest := func(url string, expected utils.IntRanges[uint16]) (uint16, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
 			defer cancel()
 			ctx = C.WithHealthCheckSourceName(ctx, gb.Name())
-
-			return proxy.URLTest(ctx, testURL, status)
+			return proxy.URLTest(C.WithConnectivityProbe(ctx), url, expected)
 		}
 
 		log.Warnln("[App] %s check started\tgroup=%s\tproxy=%s\ttimeoutMs=%d", trigger, gb.Name(), proxy.Name(), timeoutMs)
@@ -353,8 +354,9 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 			notifyMaxConnectTimesTestTriggered(gb.Name(), proxy.Name())
 		}
 
-		delay, testErr := runURLTest()
+		delay, testErr := runURLTest(testURL, status)
 		if testErr == nil {
+			recordProbeHealth(proxy, testURL, delay, true)
 			log.Warnln("[App] %s check result\t%s\t%s\tsuccess\t%d", trigger, gb.Name(), proxy.Name(), delay)
 			if callbacks.onSuccess != nil {
 				callbacks.onSuccess()
@@ -366,12 +368,19 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 		log.Warnln("[App] %s check result\t%s\t%s\tfailed\t%v", trigger, gb.Name(), proxy.Name(), testErr)
 		log.Warnln("[App] %s retry\tgroup=%s\tproxy=%s\treason=initial check failed", trigger, gb.Name(), proxy.Name())
 
-		retryDelay, retryErr := runURLTest()
+		if gb.traffic.receivedSince(proxyName, started) {
+			gb.resetFailedTimes()
+			return
+		}
+		confirmationStatus, _ := utils.NewUnsignedRanges[uint16]("204")
+		retryDelay, retryErr := runURLTest(independentProbeURL(testURL), confirmationStatus)
 		if retryErr == nil {
 			log.Warnln("[App] %s check result\t%s\t%s\tsuccess\t%d", trigger, gb.Name(), proxy.Name(), retryDelay)
-			if callbacks.onSuccess != nil {
-				callbacks.onSuccess()
-			}
+			// A destination-specific failure must not clear the user's selection.
+			gb.resetFailedTimes()
+			return
+		}
+		if gb.traffic.receivedSince(proxyName, started) {
 			gb.resetFailedTimes()
 			return
 		}
@@ -379,6 +388,7 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 		log.Warnln("[App] %s check result\t%s\t%s\tfailed\t%v", trigger, gb.Name(), proxy.Name(), retryErr)
 		log.Warnln("[App] %s triggered health check\tgroup=%s\tproxy=%s\treason=retry failed", trigger, gb.Name(), proxy.Name())
 		log.Infoln("Proxy group %s current proxy %s failed %s precheck twice; triggering health check", gb.Name(), proxy.Name(), trigger)
+		recordProbeHealth(proxy, testURL, 0, false)
 		callbacks.onFailure()
 	}()
 }
@@ -469,6 +479,9 @@ func (gb *GroupBase) onDialFailedWithCallbacks(ctx context.Context, adapterType 
 }
 
 func (gb *GroupBase) handleDialFailed(ctx context.Context, err error, proxy C.Proxy, testURL, expectedStatus string, callbacks proxyPrecheckCallbacks) {
+	if errors.Is(err, context.Canceled) || ctx.Err() == context.Canceled {
+		return
+	}
 	if gb.shouldSuppressDialFailureStats(ctx) {
 		return
 	}
@@ -503,8 +516,12 @@ func (gb *GroupBase) handleDialFailed(ctx context.Context, err error, proxy C.Pr
 }
 
 func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
+	gb.healthCheckCandidate(testURL, expectedStatusText)
+}
+
+func (gb *GroupBase) healthCheckCandidate(testURL string, expectedStatusText string) C.Proxy {
 	if !gb.failedTesting.CompareAndSwap(false, true) {
-		return
+		return nil
 	}
 	defer func() {
 		gb.failedTesting.Store(false)
@@ -522,6 +539,8 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 		expectedStatus = nil
 	}
 	targetNames := gb.healthCheckTargetNames()
+	started := time.Now()
+	var ready C.Proxy
 
 	for _, proxyProvider := range gb.providers {
 		if testURL == "" {
@@ -530,6 +549,7 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 			continue
 		}
 		if proxyProvider.HealthCheckURLUntilHealthy(testURL, expectedStatus, targetNames) {
+			ready = gb.verifiedRecoveryCandidate(testURL, started)
 			log.Infoln("Proxy group %s found a healthy proxy; ending health check early", gb.Name())
 			break
 		}
@@ -537,6 +557,7 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 
 	gb.resetFailedTimes()
 	gb.resetConnectTimes()
+	return ready
 }
 
 func (gb *GroupBase) healthCheckTargetNames() map[string]struct{} {
@@ -557,6 +578,7 @@ func (gb *GroupBase) onDialSuccess() {
 type postConnectFailureConn struct {
 	C.Conn
 	callback       func(error)
+	onRead         func()
 	once           sync.Once
 	writeMux       sync.Mutex
 	written        bool
@@ -574,12 +596,19 @@ func (c *postConnectFailureConn) notify(err error) {
 
 func (c *postConnectFailureConn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
+	if n > 0 && c.onRead != nil {
+		c.onRead()
+	}
 	c.notify(err)
 	return n, err
 }
 
 func (c *postConnectFailureConn) ReadBuffer(buffer *buf.Buffer) error {
+	before := buffer.Len()
 	err := c.Conn.ReadBuffer(buffer)
+	if buffer.Len() > before && c.onRead != nil {
+		c.onRead()
+	}
 	c.notify(err)
 	return err
 }
@@ -628,8 +657,14 @@ func (gb *GroupBase) observePostConnectFailure(ctx context.Context, c C.Conn, ad
 }
 
 func (gb *GroupBase) observePostConnectFailureWithCallbacks(ctx context.Context, c C.Conn, adapterType C.AdapterType, proxy C.Proxy, testURL, expectedStatus string, skipFirstWrite bool, callbacks proxyPrecheckCallbacks) C.Conn {
+	var onRead func()
+	if proxy != nil && !C.SuppressGroupOutboundFailureStats(ctx) {
+		name := proxy.Name()
+		onRead = func() { gb.traffic.record(name) }
+	}
 	return &postConnectFailureConn{
 		Conn:           c,
+		onRead:         onRead,
 		skipFirstWrite: skipFirstWrite,
 		callback: func(err error) {
 			gb.onDialFailedWithCallbacks(ctx, adapterType, err, proxy, testURL, expectedStatus, callbacks)

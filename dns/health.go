@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -29,16 +30,21 @@ const (
 )
 
 type healthMonitor struct {
-	mu           sync.Mutex
-	failures     []time.Time // 滑动窗口内的失败时间点
-	quietUntil   time.Time   // 静默期截止：在此之前不计失败
-	lastHealAt   time.Time   // 上次恢复时间；任一成功结果都会结束该恢复周期
+	mu         sync.Mutex
+	failures   []time.Time // 滑动窗口内的失败时间点
+	quietUntil time.Time   // 静默期截止：在此之前不计失败
+	lastHealAt time.Time   // 上次恢复时间；任一成功结果都会结束该恢复周期
+	domains    map[string]time.Time
 }
 
 var dnsHealth = &healthMonitor{}
 
 // recordResult 记录一次真实上游解析结果（缓存命中不调用此函数，因此计数只反映上游健康度）。
 func (h *healthMonitor) recordResult(success bool) {
+	h.recordExchange("", success)
+}
+
+func (h *healthMonitor) recordExchange(domain string, success bool) {
 	now := time.Now()
 
 	h.mu.Lock()
@@ -50,6 +56,7 @@ func (h *healthMonitor) recordResult(success bool) {
 			h.failures = h.failures[:0]
 		}
 		h.lastHealAt = time.Time{}
+		clear(h.domains)
 		networkrecovery.MarkHealthy()
 		return
 	}
@@ -62,6 +69,18 @@ func (h *healthMonitor) recordResult(success bool) {
 	// 追加失败并按窗口裁剪过期项
 	h.failures = append(h.failures, now)
 	cutoff := now.Add(-healFailureWindow)
+	if h.domains == nil {
+		h.domains = make(map[string]time.Time)
+	}
+	for name, at := range h.domains {
+		if !at.After(cutoff) {
+			delete(h.domains, name)
+		}
+	}
+	// Bound evidence even during an outage with a large query fan-out.
+	if len(h.domains) < healFailureThreshold && domain != "" {
+		h.domains[strings.ToLower(strings.TrimSuffix(domain, "."))] = now
+	}
 	idx := 0
 	for ; idx < len(h.failures); idx++ {
 		if h.failures[idx].After(cutoff) {
@@ -72,12 +91,16 @@ func (h *healthMonitor) recordResult(success bool) {
 		h.failures = h.failures[idx:]
 	}
 
-	if len(h.failures) < healFailureThreshold {
+	if len(h.failures) > healFailureThreshold {
+		h.failures = h.failures[len(h.failures)-healFailureThreshold:]
+	}
+	if len(h.failures) < healFailureThreshold || len(h.domains) < 3 {
 		return
 	}
 
 	// 达到阈值，触发恢复并清空窗口
 	h.failures = h.failures[:0]
+	clear(h.domains)
 	h.trigger(now)
 }
 

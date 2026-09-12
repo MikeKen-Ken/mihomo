@@ -10,6 +10,7 @@ import (
 
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
+	P "github.com/metacubex/mihomo/constant/provider"
 )
 
 const testGroupURL = "https://www.gstatic.com/generate_204"
@@ -17,13 +18,14 @@ const testGroupURL = "https://www.gstatic.com/generate_204"
 type groupMemberProxy struct {
 	C.Proxy
 
-	name     string
-	alive    atomic.Bool
-	delay    uint16
-	urlErr   error
-	urlDelay uint16
-	urlCalls atomic.Int32
-	dialErr  error
+	name      string
+	alive     atomic.Bool
+	delay     uint16
+	urlErr    error
+	urlDelay  uint16
+	urlCalls  atomic.Int32
+	dialErr   error
+	checkedAt atomic.Int64
 
 	urlStartedOnce sync.Once
 	urlStarted     chan struct{}
@@ -45,6 +47,10 @@ func (p *groupMemberProxy) Type() C.AdapterType { return C.Shadowsocks }
 func (p *groupMemberProxy) AliveForTestUrl(string) bool { return p.alive.Load() }
 
 func (p *groupMemberProxy) LastDelayForTestUrl(string) uint16 { return p.delay }
+
+func (p *groupMemberProxy) DelayHistoryForTestUrl(string) []C.DelayHistory {
+	return []C.DelayHistory{{Time: time.Unix(0, p.checkedAt.Load()), Delay: p.delay}}
+}
 
 func (p *groupMemberProxy) DialContext(context.Context, *C.Metadata) (C.Conn, error) {
 	return nil, p.dialErr
@@ -189,6 +195,7 @@ func TestFallbackHealthCheckUnpinsFailedNode(t *testing.T) {
 	alive := &groupMemberProxy{name: "node-b", delay: 80}
 	alive.alive.Store(true)
 	f := newTestFallback(1, dead, alive)
+	f.providers = []P.ProxyProvider{&readyTestProvider{members: []C.Proxy{dead, alive}, ready: true}}
 	persistence := &recordingManualSelectionPersistence{}
 	f.selectionPersistence = persistence
 	f.ForceSet("node-a")

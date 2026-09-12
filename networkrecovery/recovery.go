@@ -2,6 +2,7 @@ package networkrecovery
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/component/resolver"
@@ -64,6 +65,8 @@ type Manager struct {
 	lastDNSFailureAt      time.Time
 	lastDNSFullRecoveryAt time.Time
 	lastFullRecoveryAt    time.Time
+	lastTrafficSuccessAt  time.Time
+	trafficSuccess        atomic.Int64
 	sequence              uint64
 	lastReport            Report
 }
@@ -80,6 +83,31 @@ func Recover(request Request) Report {
 
 func MarkHealthy() {
 	defaultManager.MarkHealthy()
+}
+
+// Received application data is evidence against a whole-network outage.
+func MarkTrafficHealthy() { defaultManager.MarkTrafficHealthy() }
+
+func (m *Manager) MarkTrafficHealthy() {
+	// Never wait for recovery's mutex in an application read callback: closing
+	// a connection during recovery may itself wait for that reader to finish.
+	m.trafficSuccess.Store(m.now().UnixNano())
+}
+
+// Caller holds m.mu. Consume each traffic observation only once.
+func (m *Manager) observeTrafficLocked() {
+	stamp := m.trafficSuccess.Load()
+	at := time.Unix(0, stamp)
+	if stamp == 0 || !at.After(m.lastTrafficSuccessAt) {
+		return
+	}
+	m.lastTrafficSuccessAt = at
+	m.lastDNSFailureAt = time.Time{}
+	m.lastDNSFullRecoveryAt = time.Time{}
+	if m.lastReport.RestartRecommended {
+		m.sequence++
+		m.lastReport = Report{Sequence: m.sequence, Kind: KindDNSFailure, Action: "traffic-healthy"}
+	}
 }
 
 func Status() Report {
@@ -104,12 +132,14 @@ func (m *Manager) MarkHealthy() {
 func (m *Manager) Status() Report {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.observeTrafficLocked()
 	return m.lastReport
 }
 
 func (m *Manager) Recover(request Request) Report {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.observeTrafficLocked()
 
 	now := m.now()
 	report := Report{Kind: request.Kind}
@@ -120,7 +150,8 @@ func (m *Manager) Recover(request Request) Report {
 		m.actions.resetDNS()
 		report.Action = "dns-reset"
 	case KindDNSFailure:
-		if !m.lastDNSFailureAt.IsZero() && now.Sub(m.lastDNSFailureAt) <= dnsEscalationWindow {
+		recentTraffic := !m.lastTrafficSuccessAt.IsZero() && now.Sub(m.lastTrafficSuccessAt) < 30*time.Second
+		if !recentTraffic && !m.lastDNSFailureAt.IsZero() && now.Sub(m.lastDNSFailureAt) <= dnsEscalationWindow {
 			restartRecommended := !m.lastDNSFullRecoveryAt.IsZero() &&
 				now.Sub(m.lastDNSFullRecoveryAt) <= dnsEscalationWindow
 			report = m.fullRecovery(now, request, restartRecommended)

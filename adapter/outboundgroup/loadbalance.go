@@ -120,7 +120,11 @@ func (lb *LoadBalance) ListenPacketContext(ctx context.Context, metadata *C.Meta
 	}()
 
 	proxy := lb.Unwrap(metadata, true)
-	return proxy.ListenPacketContext(ctx, metadata)
+	pc, err = proxy.ListenPacketContext(ctx, metadata)
+	if err == nil {
+		pc = lb.observePacketTraffic(ctx, pc, proxy)
+	}
+	return pc, err
 }
 
 func (lb *LoadBalance) CountRequest(metadata *C.Metadata) {

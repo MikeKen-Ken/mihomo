@@ -24,6 +24,7 @@ type Fallback struct {
 	selection       manualSelectionState
 	expectedStatus  string
 	selectedTimeout int // ms, for selected node only; 0 = use same as normal (AliveForTestUrl)
+	stable          fallbackStability
 }
 
 func (f *Fallback) Now() string {
@@ -72,6 +73,7 @@ func (f *Fallback) ListenPacketContext(ctx context.Context, metadata *C.Metadata
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(f)
+		pc = f.observePacketTraffic(ctx, pc, proxy)
 	}
 
 	return pc, err
@@ -92,8 +94,12 @@ func (f *Fallback) healthCheck() {
 func (f *Fallback) healthCheckForProxy(proxy C.Proxy, selection manualSelectionSnapshot) {
 	if proxy == nil {
 		log.Warnln("[应用] fallback 范围健康检测\tgroup=%s\tproxy=<nil>\tscope=仅自身", f.Name())
+		candidate := f.GroupBase.healthCheckCandidate(f.testUrl, f.expectedStatus)
+		if candidate == nil {
+			return
+		}
+		f.stable.remember(candidate.Name())
 		f.clearManualSelectionIfUnchanged(selection)
-		f.GroupBase.healthCheck(f.testUrl, f.expectedStatus)
 		closed := statistic.DefaultManager.CloseConnectionsUsingProxyGroup(f.Name())
 		log.Warnln("[应用] fallback 范围关闭连接\tgroup=%s\tproxy=<nil>\tclosed=%d", f.Name(), closed)
 		return
@@ -104,8 +110,15 @@ func (f *Fallback) healthCheckForProxy(proxy C.Proxy, selection manualSelectionS
 	groupNames := make([]string, 0, len(targets))
 	groupNamesLog := make([]string, 0, len(targets))
 	for _, target := range targets {
+		candidate := target.group.GroupBase.healthCheckCandidate(target.group.testUrl, target.group.expectedStatus)
+		if candidate == nil {
+			continue
+		}
+		target.group.stable.remember(candidate.Name())
 		target.group.clearManualSelectionIfUnchanged(target.selection)
-		target.group.GroupBase.healthCheck(target.group.testUrl, target.group.expectedStatus)
+		if candidate.Name() == proxyName {
+			continue
+		}
 		groupNames = append(groupNames, target.group.Name())
 		groupNamesLog = append(groupNamesLog, target.group.Name())
 	}
@@ -211,10 +224,15 @@ func (f *Fallback) findAliveProxyWithSelection(touch bool) (C.Proxy, manualSelec
 		selection = manualSelectionSnapshot{}
 	}
 
+	// Keep a working replacement briefly before returning to a preferred node.
+	if proxy := f.stable.current(proxies, f.testUrl, timeoutMs); proxy != nil {
+		return proxy, selection
+	}
 	// 自动模式：返回第一个可用的节点
 	for _, proxy := range proxies {
 		// Only use proxy if alive and delay is within group timeout
 		if proxy.AliveForTestUrl(f.testUrl) && proxy.LastDelayForTestUrl(f.testUrl) <= uint16(timeoutMs) {
+			f.stable.remember(proxy.Name())
 			return proxy, selection
 		}
 	}

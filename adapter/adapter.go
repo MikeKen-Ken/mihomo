@@ -183,6 +183,17 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 	}
 
 	defer func() {
+		// Recovery stops redundant probes after a usable backup is found.
+		// Such cancellation says nothing about the canceled node's health.
+		if ctx.Err() == context.Canceled {
+			return
+		}
+		if C.IsConnectivityProbe(ctx) {
+			if err == nil && !satisfied {
+				err = fmt.Errorf("connectivity probe returned an unexpected HTTP status")
+			}
+			return
+		}
 		alive := err == nil
 		record := C.DelayHistory{Time: time.Now()}
 		if alive {

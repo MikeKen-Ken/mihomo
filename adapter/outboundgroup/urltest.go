@@ -33,6 +33,7 @@ type URLTest struct {
 	fastNodeMux    sync.Mutex
 	fastNode       C.Proxy
 	fastSingle     *singledo.Single[C.Proxy]
+	recoveryHold   fallbackStability
 }
 
 func (u *URLTest) Now() string {
@@ -110,6 +111,7 @@ func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(u)
+		pc = u.observePacketTraffic(ctx, pc, proxy)
 	} else {
 		u.onDialFailedWithCallbacks(ctx, proxy.Type(), err, proxy, u.testUrl, u.expectedStatus, proxyPrecheckCallbacks{
 			onSuccess: func() {
@@ -141,8 +143,12 @@ func (u *URLTest) healthCheck() {
 }
 
 func (u *URLTest) healthCheckForSelection(selection manualSelectionSnapshot) {
+	candidate := u.GroupBase.healthCheckCandidate(u.testUrl, u.expectedStatus)
+	if candidate == nil {
+		return
+	}
+	u.recoveryHold.remember(candidate.Name())
 	u.clearManualSelectionIfUnchanged(selection)
-	u.GroupBase.healthCheck(u.testUrl, u.expectedStatus)
 	u.fastSingle.Reset()
 }
 
@@ -186,6 +192,14 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 			u.fastNode = nil
 		}
 
+		if recovered := u.recoveryHold.current(proxies, u.testUrl, u.TestTimeout); recovered != nil {
+			u.fastNode = recovered
+			u.fastNodeMux.Unlock()
+			if clearedSelection {
+				u.onManualSelectionCleared()
+			}
+			return recovered, nil
+		}
 		fast := proxies[0]
 		minDelay := fast.LastDelayForTestUrl(u.testUrl)
 		fastNotExist := true
