@@ -71,10 +71,10 @@ func New(config LC.VlessServer, tunnel C.Tunnel, additions ...inbound.Addition) 
 		return nil, err
 	}
 	if sl.decryption != nil {
+		decryption := sl.decryption
 		defer func() { // decryption must be closed to avoid the goroutine leak
 			if err != nil {
-				_ = sl.decryption.Close()
-				sl.decryption = nil
+				_ = decryption.Close()
 			}
 		}()
 	}

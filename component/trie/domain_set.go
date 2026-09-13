@@ -98,7 +98,7 @@ func (ss *DomainSet) HasWithMatch(key string) (bool, string) {
 		c := key[i]
 		for ; ; bmIdx++ {
 			if getBit(ss.labelBitmap, bmIdx) != 0 {
-				if len(stack) > 0 {
+				for len(stack) > 0 {
 					cursor := stack[len(stack)-1]
 					stack = stack[0 : len(stack)-1]
 					// back wildcard and find next node
@@ -115,11 +115,10 @@ func (ss *DomainSet) HasWithMatch(key string) (bool, string) {
 								suffix = suffix[1:]
 							}
 							return true, "+." + suffix
-						} else {
-							goto RESTART
 						}
+						continue
 					}
-					for ; nextBmIdx-nextNodeId < len(ss.labels); nextBmIdx++ {
+					for ; getBit(ss.labelBitmap, nextBmIdx) == 0; nextBmIdx++ {
 						if ss.labels[nextBmIdx-nextNodeId] == domainStepByte {
 							bmIdx = nextBmIdx
 							nodeId = nextNodeId
@@ -149,6 +148,10 @@ func (ss *DomainSet) HasWithMatch(key string) (bool, string) {
 		}
 		nodeId = countZeros(ss.labelBitmap, ss.ranks, bmIdx+1)
 		bmIdx = selectIthOne(ss.labelBitmap, ss.ranks, ss.selects, nodeId-1) + 1
+		if i == len(key)-1 && getBit(ss.leaves, nodeId) == 0 && len(stack) > 0 {
+			bmIdx = selectIthOne(ss.labelBitmap, ss.ranks, ss.selects, nodeId)
+			goto RESTART
+		}
 	}
 
 	if getBit(ss.leaves, nodeId) != 0 {
