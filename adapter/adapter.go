@@ -174,6 +174,13 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 			timeoutMs = int(remaining.Milliseconds())
 		}
 	}
+	// Register cleanup before result recording so our own cancel does not make
+	// a completed probe look like externally canceled recovery work.
+	if _, ok := C.DelayTestTimeoutMs(ctx); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+		defer cancel()
+	}
 	var satisfied bool
 	uid := utils.NewUUIDV4().String()
 	if src := C.HealthCheckSourceName(ctx); src != "" {
@@ -240,12 +247,6 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 	addr, err := urlToMetadata(url)
 	if err != nil {
 		return
-	}
-
-	if _, ok := C.DelayTestTimeoutMs(ctx); ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
-		defer cancel()
 	}
 
 	start := time.Now()
