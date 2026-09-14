@@ -16,10 +16,12 @@ type Event struct {
 }
 
 type Metrics struct {
-	Events         []Event `json:"events"`
-	TrafficVetoes  uint64  `json:"trafficVetoes"`
-	FailedSearches uint64  `json:"failedSearches"`
-	Switches       uint64  `json:"switches"`
+	ObservedAt     time.Time  `json:"observedAt"`
+	LastTrafficAt  *time.Time `json:"lastTrafficAt,omitempty"`
+	Events         []Event    `json:"events"`
+	TrafficVetoes  uint64     `json:"trafficVetoes"`
+	FailedSearches uint64     `json:"failedSearches"`
+	Switches       uint64     `json:"switches"`
 }
 
 var diagnostics struct {
@@ -57,6 +59,11 @@ func Diagnostics() Metrics {
 	diagnostics.Lock()
 	defer diagnostics.Unlock()
 	result := Metrics{Events: make([]Event, diagnostics.count), TrafficVetoes: diagnostics.vetoes, FailedSearches: diagnostics.failed, Switches: diagnostics.switches}
+	result.ObservedAt = time.Now()
+	if stamp := defaultManager.trafficSuccess.Load(); stamp > 0 {
+		at := time.Unix(0, stamp)
+		result.LastTrafficAt = &at
+	}
 	for i := range result.Events {
 		result.Events[i] = diagnostics.events[(diagnostics.next-diagnostics.count+i+eventCapacity)%eventCapacity]
 	}

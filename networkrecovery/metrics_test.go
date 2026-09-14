@@ -23,3 +23,21 @@ func TestDiagnosticsBoundedAndDetached(t *testing.T) {
 		t.Fatal("unknown action retained")
 	}
 }
+
+func TestDiagnosticsTrafficEvidenceDoesNotClaimResetSuccess(t *testing.T) {
+	previous := defaultManager.trafficSuccess.Swap(0)
+	defer defaultManager.trafficSuccess.Store(previous)
+	RecordEvent("route-reset", time.Now())
+	if Diagnostics().LastTrafficAt != nil {
+		t.Fatal("a reset is not application traffic evidence")
+	}
+	MarkTrafficHealthy()
+	snapshot := Diagnostics()
+	if snapshot.LastTrafficAt == nil || snapshot.LastTrafficAt.After(snapshot.ObservedAt) {
+		t.Fatal("missing or invalid traffic observation")
+	}
+	*snapshot.LastTrafficAt = time.Time{}
+	if Diagnostics().LastTrafficAt.IsZero() {
+		t.Fatal("traffic snapshot aliases state")
+	}
+}
