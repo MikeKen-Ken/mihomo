@@ -15,9 +15,9 @@ import (
 // 写入核心 home 下 proxy-connectivity-stats.json，供 verge 排序与 UI 读取。
 
 const (
-	desktopStatsRetentionDays     = 30
-	desktopDefaultPenaltyDelayMs  = 5000
-	desktopConnectivityStatsFile  = "proxy-connectivity-stats.json"
+	desktopStatsRetentionDays    = 30
+	desktopDefaultPenaltyDelayMs = 5000
+	desktopConnectivityStatsFile = "proxy-connectivity-stats.json"
 	// 同一节点一分钟内最多记 1 次失败，避免重连/健康检查风暴把分数打崩。
 	desktopFailureRecordMinInterval = time.Minute
 )
@@ -34,9 +34,9 @@ type desktopProxyEntry struct {
 }
 
 type desktopStatsFileV2 struct {
-	V    int                           `json:"v"`
-	Data map[string]desktopProxyEntry  `json:"data"`
-	Sync json.RawMessage               `json:"_sync,omitempty"`
+	V    int                          `json:"v"`
+	Data map[string]desktopProxyEntry `json:"data"`
+	Sync json.RawMessage              `json:"_sync,omitempty"`
 }
 
 var (
@@ -153,55 +153,65 @@ func recordDesktopConnectivityStats(proxyName string, delay int, timeoutMs int) 
 	}
 	isSuccess := delay > 0 && delay <= effectiveTimeout
 
-	now := time.Now()
-	day := desktopTodayKey(now)
+	desktopStatsWriter.record(desktopStatsSample{
+		name: proxyName, delay: delay, timeout: effectiveTimeout,
+		success: isSuccess, at: time.Now(),
+	})
+}
 
+// Read the latest UI reset/sync state under the cross-process lock. Callers
+// are acknowledged only after the entire batch has finished writing.
+func persistDesktopStatsBatch(samples []desktopStatsSample) {
 	desktopStatsMu.Lock()
 	defer desktopStatsMu.Unlock()
-
 	withConnectivityStatsDiskLock(func() {
-		// 持盘锁后从磁盘重载，避免与 UI 清空/写入互相覆盖
 		file := desktopLoadStatsFromDisk()
 		desktopStatsCache = file.Data
 		desktopStatsSync = file.Sync
 		if desktopLastFailureAt == nil {
 			desktopLastFailureAt = make(map[string]time.Time)
 		}
-		// UI 清空该节点后磁盘无条目，允许立即重新记失败
-		if _, ok := desktopStatsCache[proxyName]; !ok {
-			delete(desktopLastFailureAt, proxyName)
-		}
-
-		if !isSuccess {
-			if last, ok := desktopLastFailureAt[proxyName]; ok && now.Sub(last) < desktopFailureRecordMinInterval {
-				return
+		changed := false
+		for _, sample := range samples {
+			if applyDesktopStatsSample(sample) {
+				changed = true
 			}
 		}
-
-		entry := desktopStatsCache[proxyName]
-		if entry.Days == nil {
-			entry.Days = make(map[string]desktopDayCounts)
+		if changed {
+			desktopPruneExpiredEntries(time.Now())
+			desktopPersistStats()
 		}
-		counts := entry.Days[day]
-		if isSuccess {
-			counts.Success++
-			counts.DelaySum += delay
-			entry.LastSuccessAt = now.Unix()
-		} else {
-			counts.Failure++
-			counts.DelaySum += effectiveTimeout
-			desktopLastFailureAt[proxyName] = now
-		}
-		entry.Days[day] = counts
-		desktopPruneDays(entry.Days, now)
-		if len(entry.Days) == 0 {
-			delete(desktopStatsCache, proxyName)
-			delete(desktopLastFailureAt, proxyName)
-		} else {
-			desktopStatsCache[proxyName] = entry
-		}
-		// 顺带清掉其他节点已过期的空条目，避免换订阅后历史节点名只增不减
-		desktopPruneExpiredEntries(now)
-		desktopPersistStats()
 	})
+}
+
+func applyDesktopStatsSample(sample desktopStatsSample) bool {
+	proxyName, now := sample.name, sample.at
+	if _, ok := desktopStatsCache[proxyName]; !ok {
+		delete(desktopLastFailureAt, proxyName)
+	}
+	if !sample.success {
+		if last, ok := desktopLastFailureAt[proxyName]; ok && now.Sub(last) < desktopFailureRecordMinInterval {
+			return false
+		}
+	}
+	entry := desktopStatsCache[proxyName]
+	if entry.Days == nil {
+		entry.Days = make(map[string]desktopDayCounts)
+	}
+	day := desktopTodayKey(now)
+	counts := entry.Days[day]
+	if sample.success {
+		counts.Success++
+		counts.DelaySum += sample.delay
+		if now.Unix() > entry.LastSuccessAt {
+			entry.LastSuccessAt = now.Unix()
+		}
+	} else {
+		counts.Failure++
+		counts.DelaySum += sample.timeout
+		desktopLastFailureAt[proxyName] = now
+	}
+	entry.Days[day] = counts
+	desktopStatsCache[proxyName] = entry
+	return true
 }
