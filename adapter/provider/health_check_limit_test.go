@@ -14,8 +14,11 @@ func TestClampHealthCheckWorkerLimit(t *testing.T) {
 		{input: 0, want: 30},
 		{input: 5, want: 5},
 		{input: 30, want: 30},
-		{input: 31, want: 30},
-		{input: 200, want: 30},
+		{input: 50, want: 50},
+		{input: 100, want: 100},
+		{input: 150, want: 150},
+		{input: 200, want: 200},
+		{input: 201, want: 200},
 	}
 	for _, test := range tests {
 		if got := ClampHealthCheckWorkerLimit(test.input); got != test.want {

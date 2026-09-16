@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-const healthCheckWorkerLimitMax = 30
+const healthCheckWorkerLimitMax = 200
 
 var (
 	healthCheckWorkerLimitMu sync.RWMutex
