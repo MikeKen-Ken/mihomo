@@ -61,6 +61,7 @@ type GroupBase struct {
 	getProxiesMutex  sync.Mutex
 	providerVersions []uint32
 	providerProxies  []C.Proxy
+	runtimeOrder     map[string]int // guarded by getProxiesMutex
 }
 
 type GroupBaseOption struct {
@@ -253,6 +254,7 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 	}
 
 	// only cache when proxies not empty
+	gb.sortRuntimeOrder(proxies)
 	gb.providerVersions = providerVersions
 	gb.providerProxies = proxies
 

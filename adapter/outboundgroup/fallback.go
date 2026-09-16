@@ -237,7 +237,11 @@ func (f *Fallback) findAliveProxyWithSelection(touch bool) (C.Proxy, manualSelec
 	}
 
 	// Keep a working replacement briefly before returning to a preferred node.
-	if proxy := f.stable.current(proxies, f.testUrl, timeoutMs); proxy != nil {
+	if proxy, ordered := f.firstRuntimeOrderedHealthy(proxies, f.testUrl); ordered {
+		if proxy != nil {
+			return proxy, selection
+		}
+	} else if proxy := f.stable.current(proxies, f.testUrl, timeoutMs); proxy != nil {
 		return proxy, selection
 	}
 	// 自动模式：返回第一个可用的节点

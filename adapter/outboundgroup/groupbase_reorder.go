@@ -35,13 +35,46 @@ func (gb *GroupBase) ReorderCachedProxies(orderedNames []string) {
 
 	indexByName := make(map[string]int, len(orderedNames))
 	for i, name := range orderedNames {
-		indexByName[name] = i
+		if _, exists := indexByName[name]; !exists {
+			indexByName[name] = i
+		}
 	}
+	gb.runtimeOrder = indexByName
 
 	reordered := make([]C.Proxy, len(gb.providerProxies))
 	copy(reordered, gb.providerProxies)
-	sort.SliceStable(reordered, func(i, j int) bool {
-		return lessByNameOrder(reordered[i].Name(), reordered[j].Name(), indexByName)
-	})
+	gb.sortRuntimeOrder(reordered)
 	gb.providerProxies = reordered
+}
+
+// Caller holds getProxiesMutex. Retain the runtime order across provider updates.
+func (gb *GroupBase) sortRuntimeOrder(proxies []C.Proxy) {
+	if len(gb.runtimeOrder) == 0 {
+		return
+	}
+	sort.SliceStable(proxies, func(i, j int) bool {
+		return lessByNameOrder(proxies[i].Name(), proxies[j].Name(), gb.runtimeOrder)
+	})
+}
+
+// Explicit runtime ordering is an automatic policy, not a manual selection.
+// Read current shared health on every choice so groups converge as tests finish.
+func (gb *GroupBase) firstRuntimeOrderedHealthy(proxies []C.Proxy, url string) (C.Proxy, bool) {
+	gb.getProxiesMutex.Lock()
+	ordered := len(gb.runtimeOrder) > 0
+	gb.getProxiesMutex.Unlock()
+	if !ordered {
+		return nil, false
+	}
+	timeout := gb.TestTimeout
+	if timeout <= 0 {
+		timeout = 5000
+	}
+	for _, proxy := range proxies {
+		delay := int(proxy.LastDelayForTestUrl(url))
+		if proxy.AliveForTestUrl(url) && delay > 0 && delay < timeout {
+			return proxy, true
+		}
+	}
+	return nil, true
 }

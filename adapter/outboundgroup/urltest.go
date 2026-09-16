@@ -187,6 +187,23 @@ func (u *URLTest) fastWithSelection(touch bool) (C.Proxy, manualSelectionSnapsho
 }
 
 func (u *URLTest) fast(touch bool) C.Proxy {
+	// Explicit connectivity order takes precedence over latency tolerance and
+	// the ten-second fastest-node cache, while retaining the user's manual pin.
+	proxies := u.GetProxies(touch)
+	if first, ordered := u.firstRuntimeOrderedHealthy(proxies, u.testUrl); ordered {
+		selection := u.selection.snapshot()
+		for _, proxy := range proxies {
+			if proxy.Name() == selection.name {
+				return proxy
+			}
+		}
+		if selection.name != "" {
+			u.clearManualSelectionIfUnchanged(selection)
+		}
+		if first != nil {
+			return first
+		}
+	}
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
 		u.fastNodeMux.Lock()
 		proxies := u.GetProxies(touch)
