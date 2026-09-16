@@ -75,9 +75,7 @@ func (u *URLTest) ClearManualSelection() {
 func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy, selection := u.fastWithSelection(true)
 	callbacks := proxyPrecheckCallbacks{
-		onSuccess: func() {
-			u.clearManualSelectionIfUnchanged(selection)
-		},
+		// Keep the manual selection when its diagnostic probe succeeds.
 		onFailure: func() {
 			u.healthCheckForSelection(selection)
 		},
@@ -115,9 +113,6 @@ func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata)
 		pc = u.observePacketTraffic(ctx, pc, proxy)
 	} else {
 		u.onDialFailedWithCallbacks(ctx, proxy.Type(), err, proxy, u.testUrl, u.expectedStatus, proxyPrecheckCallbacks{
-			onSuccess: func() {
-				u.clearManualSelectionIfUnchanged(selection)
-			},
 			onFailure: func() {
 				u.healthCheckForSelection(selection)
 			},

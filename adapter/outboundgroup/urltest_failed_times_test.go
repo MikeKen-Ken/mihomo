@@ -28,7 +28,7 @@ func newFailedTimesURLTest(maxFailedTimes int, members ...C.Proxy) *URLTest {
 	}
 }
 
-func TestURLTestMaxFailedTimesReleasesAndPersistsPin(t *testing.T) {
+func TestURLTestMaxFailedTimesKeepsReachablePin(t *testing.T) {
 	current := &groupMemberProxy{name: "node-a", delay: 40, urlDelay: 40, dialErr: errors.New("dial timeout")}
 	current.alive.Store(true)
 	next := &groupMemberProxy{name: "node-b", delay: 80, urlDelay: 80}
@@ -45,11 +45,11 @@ func TestURLTestMaxFailedTimesReleasesAndPersistsPin(t *testing.T) {
 		return !u.connectTesting.Load()
 	})
 
-	if u.NowIsManual() {
-		t.Fatal("manual selection remained after max-failed-times was reached")
+	if !u.NowIsManual() {
+		t.Fatal("manual selection cleared despite successful diagnostic probe")
 	}
-	if got := persistence.cleared.Load(); got != 1 {
-		t.Fatalf("persisted selection clears = %d, want 1", got)
+	if got := persistence.cleared.Load(); got != 0 {
+		t.Fatalf("persisted selection clears = %d, want 0", got)
 	}
 }
 

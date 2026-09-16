@@ -115,7 +115,7 @@ func TestMaxFailedTimesOneDialFailureTriggersHealthCheck(t *testing.T) {
 	}
 }
 
-func TestMaxFailedTimesReleasesPinWhenGenerate204StillWorks(t *testing.T) {
+func TestMaxFailedTimesKeepsPinWhenGenerate204StillWorks(t *testing.T) {
 	current := &groupMemberProxy{name: "node-a", delay: 40, urlDelay: 40, dialErr: errors.New("dial timeout")}
 	current.alive.Store(true)
 	next := &groupMemberProxy{name: "node-b", delay: 80, urlDelay: 80}
@@ -133,14 +133,14 @@ func TestMaxFailedTimesReleasesPinWhenGenerate204StillWorks(t *testing.T) {
 		return !f.connectTesting.Load()
 	})
 
-	if f.NowIsManual() {
-		t.Fatal("manual selection remained after max-failed-times was reached")
+	if !f.NowIsManual() {
+		t.Fatal("manual selection cleared despite successful diagnostic probe")
 	}
-	if got := persistence.cleared.Load(); got != 1 {
-		t.Fatalf("persisted selection clears = %d, want 1", got)
+	if got := persistence.cleared.Load(); got != 0 {
+		t.Fatalf("persisted selection clears = %d, want 0", got)
 	}
 	if got := f.Now(); got != "node-a" {
-		t.Fatalf("Now() = %q, want node-a to remain eligible for automatic selection", got)
+		t.Fatalf("Now() = %q, want pinned node-a", got)
 	}
 }
 

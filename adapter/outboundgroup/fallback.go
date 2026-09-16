@@ -37,9 +37,8 @@ func (f *Fallback) Now() string {
 func (f *Fallback) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
 	proxy, selection := f.findAliveProxyWithSelection(true)
 	callbacks := proxyPrecheckCallbacks{
-		onSuccess: func() {
-			f.clearManualSelectionIfUnchanged(selection)
-		},
+		// A successful probe confirms reachability; a destination failure must
+		// not release the user's pin. Only confirmed failure starts recovery.
 		onFailure: func() {
 			f.healthCheckForProxy(proxy, selection)
 		},
