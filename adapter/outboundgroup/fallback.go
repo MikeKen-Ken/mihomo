@@ -313,7 +313,9 @@ func (f *Fallback) NowIsManual() bool {
 
 // ClearManualSelection clears the fixed selected node so the group auto-picks first alive.
 func (f *Fallback) ClearManualSelection() {
-	f.selection.clear()
+	if f.selection.clear() {
+		f.onManualSelectionCleared()
+	}
 }
 
 func (f *Fallback) clearManualSelectionIfUnchanged(selection manualSelectionSnapshot) {

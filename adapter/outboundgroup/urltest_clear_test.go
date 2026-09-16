@@ -10,8 +10,10 @@ import (
 
 func TestURLTestClearManualSelectionResetsFastCache(t *testing.T) {
 	u := &URLTest{
+		GroupBase:  NewGroupBase(GroupBaseOption{Name: "Auto", Type: C.URLTest}),
 		fastSingle: singledo.NewSingle[C.Proxy](time.Second * 10),
 	}
+	u.selectionPersistence = nil
 	u.ForceSet("node-a")
 	u.ClearManualSelection()
 	if got := u.selection.snapshot().name; got != "" {
@@ -19,6 +21,20 @@ func TestURLTestClearManualSelectionResetsFastCache(t *testing.T) {
 	}
 	if u.fastNode != nil {
 		t.Fatal("fastNode should be cleared")
+	}
+}
+
+func TestURLTestClearManualSelectionPersistsClear(t *testing.T) {
+	u := &URLTest{
+		GroupBase:  NewGroupBase(GroupBaseOption{Name: "Auto", Type: C.URLTest}),
+		fastSingle: singledo.NewSingle[C.Proxy](time.Second * 10),
+	}
+	persistence := &recordingManualSelectionPersistence{}
+	u.selectionPersistence = persistence
+	u.ForceSet("node-a")
+	u.ClearManualSelection()
+	if got := persistence.cleared.Load(); got != 1 {
+		t.Fatalf("persisted selection clears = %d, want 1", got)
 	}
 }
 
