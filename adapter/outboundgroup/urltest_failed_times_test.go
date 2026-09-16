@@ -8,6 +8,7 @@ import (
 
 	"github.com/metacubex/mihomo/common/singledo"
 	C "github.com/metacubex/mihomo/constant"
+	P "github.com/metacubex/mihomo/constant/provider"
 )
 
 func newFailedTimesURLTest(maxFailedTimes int, members ...C.Proxy) *URLTest {
@@ -95,5 +96,30 @@ func TestStaleURLTestPrecheckDoesNotClearNewerSelection(t *testing.T) {
 	}
 	if got := persistence.cleared.Load(); got != 0 {
 		t.Fatalf("persisted selection clears = %d, want 0 for a stale precheck", got)
+	}
+}
+
+func TestURLTestFailedBackupCheckKeepsSelection(t *testing.T) {
+	dead := &groupMemberProxy{name: "dead", delay: 0xffff}
+	u := newFailedTimesURLTest(1, dead)
+	u.providers = []P.ProxyProvider{&readyTestProvider{members: []C.Proxy{dead}}}
+	u.ForceSet("dead")
+	u.healthCheckForSelection(u.selection.snapshot())
+	if !u.NowIsManual() {
+		t.Fatal("removed selection before any replacement passed")
+	}
+}
+
+func TestURLTestConcurrentHealthCheckReleasesPin(t *testing.T) {
+	dead := &groupMemberProxy{name: "dead", delay: 0xffff}
+	alive := &groupMemberProxy{name: "alive", delay: 80}
+	alive.alive.Store(true)
+	u := newFailedTimesURLTest(1, dead, alive)
+	u.providers = []P.ProxyProvider{&readyTestProvider{members: []C.Proxy{dead, alive}, ready: true}}
+	u.ForceSet("dead")
+	u.failedTesting.Store(true)
+	u.healthCheckForSelection(u.selection.snapshot())
+	if u.NowIsManual() {
+		t.Fatal("pin survived a health check that never ran")
 	}
 }

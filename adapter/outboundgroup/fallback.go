@@ -94,8 +94,13 @@ func (f *Fallback) healthCheck() {
 func (f *Fallback) healthCheckForProxy(proxy C.Proxy, selection manualSelectionSnapshot) {
 	if proxy == nil {
 		log.Warnln("[应用] fallback 范围健康检测\tgroup=%s\tproxy=<nil>\tscope=仅自身", f.Name())
-		candidate := f.GroupBase.healthCheckCandidate(f.testUrl, f.expectedStatus)
+		candidate, conclusive := f.GroupBase.healthCheckCandidate(f.testUrl, f.expectedStatus)
 		if candidate == nil {
+			// Losing the race for the health-check guard says nothing about the
+			// pinned node, so it must not be the reason the pin survives.
+			if !conclusive {
+				f.clearManualSelectionIfUnchanged(selection)
+			}
 			return
 		}
 		f.stable.remember(candidate.Name())
@@ -111,8 +116,11 @@ func (f *Fallback) healthCheckForProxy(proxy C.Proxy, selection manualSelectionS
 	groupNamesLog := make([]string, 0, len(targets))
 	for _, target := range targets {
 		started := time.Now()
-		candidate := target.group.GroupBase.healthCheckCandidate(target.group.testUrl, target.group.expectedStatus)
+		candidate, conclusive := target.group.GroupBase.healthCheckCandidate(target.group.testUrl, target.group.expectedStatus)
 		if candidate == nil {
+			if !conclusive {
+				target.group.clearManualSelectionIfUnchanged(target.selection)
+			}
 			continue
 		}
 		target.group.stable.remember(candidate.Name())

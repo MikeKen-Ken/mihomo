@@ -145,8 +145,13 @@ func (u *URLTest) healthCheckForSelection(selection manualSelectionSnapshot) {
 		previous = u.fastNode.Name()
 	}
 	u.fastNodeMux.Unlock()
-	candidate := u.GroupBase.healthCheckCandidate(u.testUrl, u.expectedStatus)
+	candidate, conclusive := u.GroupBase.healthCheckCandidate(u.testUrl, u.expectedStatus)
 	if candidate == nil {
+		// Losing the race for the health-check guard says nothing about the
+		// pinned node, so it must not be the reason the pin survives.
+		if !conclusive {
+			u.clearManualSelectionIfUnchanged(selection)
+		}
 		return
 	}
 	u.recoveryHold.remember(candidate.Name())

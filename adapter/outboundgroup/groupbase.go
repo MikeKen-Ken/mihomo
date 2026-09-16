@@ -524,9 +524,13 @@ func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
 	gb.healthCheckCandidate(testURL, expectedStatusText)
 }
 
-func (gb *GroupBase) healthCheckCandidate(testURL string, expectedStatusText string) C.Proxy {
+// healthCheckCandidate reports the verified replacement for the current node.
+// conclusive is false when another health check already owned this group, which
+// means this call reached no verdict about the current node at all; callers must
+// not read that as "no replacement exists".
+func (gb *GroupBase) healthCheckCandidate(testURL string, expectedStatusText string) (candidate C.Proxy, conclusive bool) {
 	if !gb.failedTesting.CompareAndSwap(false, true) {
-		return nil
+		return nil, false
 	}
 	defer func() {
 		gb.failedTesting.Store(false)
@@ -567,7 +571,7 @@ func (gb *GroupBase) healthCheckCandidate(testURL string, expectedStatusText str
 	} else {
 		networkrecovery.RecordEvent("backup-verified", started)
 	}
-	return ready
+	return ready, true
 }
 
 func (gb *GroupBase) healthCheckTargetNames() map[string]struct{} {
