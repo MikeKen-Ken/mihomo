@@ -363,6 +363,7 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 		if testErr == nil {
 			recordProbeHealth(proxy, testURL, delay, true)
 			log.Warnln("[App] %s check result\t%s\t%s\tsuccess\t%d", trigger, gb.Name(), proxy.Name(), delay)
+			recordConclusiveMaxFailedTimes(trigger, proxy.Name(), delay, timeoutMs)
 			if callbacks.onSuccess != nil {
 				callbacks.onSuccess()
 			}
@@ -383,6 +384,7 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 		if retryErr == nil {
 			log.Warnln("[App] %s check result\t%s\t%s\tsuccess\t%d", trigger, gb.Name(), proxy.Name(), retryDelay)
 			// A destination-specific failure must not clear the user's selection.
+			recordConclusiveMaxFailedTimes(trigger, proxy.Name(), retryDelay, timeoutMs)
 			gb.resetFailedTimes()
 			return
 		}
@@ -396,8 +398,19 @@ func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, 
 		log.Warnln("[App] %s triggered health check\tgroup=%s\tproxy=%s\treason=retry failed", trigger, gb.Name(), proxy.Name())
 		log.Infoln("Proxy group %s current proxy %s failed %s precheck twice; triggering health check", gb.Name(), proxy.Name(), trigger)
 		recordProbeHealth(proxy, testURL, 0, false)
+		recordConclusiveMaxFailedTimes(trigger, proxy.Name(), 0, timeoutMs)
 		callbacks.onFailure()
 	}()
+}
+
+// recordConclusiveMaxFailedTimes stores one max-failed-times verdict.
+// The probe itself stays out of delay history. max-connect-times is unchanged.
+// Delay 0 is a finished failure; the recorder applies its fixed penalty.
+func recordConclusiveMaxFailedTimes(trigger, proxyName string, delay uint16, timeoutMs int) {
+	if trigger != "max-failed-times" || proxyName == "" {
+		return
+	}
+	recordFailedTimesConnectivity(proxyName, int(delay), timeoutMs)
 }
 
 func (gb *GroupBase) resetFailedTimes() {

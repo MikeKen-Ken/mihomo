@@ -49,3 +49,7 @@ func notifyMaxConnectTimesTestTriggered(groupName string, proxyName string) {
 func notifyProxyGroupRefresh(groupName string) {
 	delegate.NotifyHealthCheckTriggered(marshalHealthCheckEvent("proxy-group-refresh", groupName, ""))
 }
+
+var recordFailedTimesConnectivity = func(proxyName string, delay int, timeoutMs int) {
+	delegate.RecordProxyConnectivityTest(proxyName, delay, timeoutMs)
+}

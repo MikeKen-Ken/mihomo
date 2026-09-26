@@ -316,6 +316,12 @@ func NewProxy(adapter C.ProxyAdapter) *Proxy {
 	}
 }
 
+// RecordConnectivitySample records one completed delay observation through the
+// same path as Proxy.URLTest. A delay of 0 is a finished failure.
+func RecordConnectivitySample(proxyName string, delay int, timeoutMs int) {
+	recordProxyConnectivityTest(proxyName, delay, timeoutMs)
+}
+
 func urlToMetadata(rawURL string) (addr C.Metadata, err error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
