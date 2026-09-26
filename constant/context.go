@@ -73,26 +73,6 @@ func DelayTestTimeoutMs(ctx context.Context) (int, bool) {
 	return timeoutMs, ok && timeoutMs > 0
 }
 
-type ctxKeyConnectivityProbe struct{}
-
-// WithConnectivityProbe marks a diagnostic URLTest. It updates neither delay
-// history nor the connectivity-statistics counter.
-func WithConnectivityProbe(parent context.Context) context.Context {
-	if parent == nil {
-		parent = context.Background()
-	}
-	return context.WithValue(parent, ctxKeyConnectivityProbe{}, true)
-}
-
-// IsConnectivityProbe reports whether WithConnectivityProbe marked ctx.
-func IsConnectivityProbe(ctx context.Context) bool {
-	if ctx == nil {
-		return false
-	}
-	marked, _ := ctx.Value(ctxKeyConnectivityProbe{}).(bool)
-	return marked
-}
-
 type PlainContext interface {
 	ID() uuid.UUID
 }
