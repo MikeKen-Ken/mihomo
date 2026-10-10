@@ -50,12 +50,10 @@ func TestDesktopStatsBatchBoundAndAcknowledgement(t *testing.T) {
 func statsTestHome(t testing.TB) {
 	old := C.Path.HomeDir()
 	C.SetHomeDir(t.TempDir())
-	desktopLastFailureAt = nil
 	t.Cleanup(func() {
 		C.SetHomeDir(old)
 		desktopStatsCache = nil
 		desktopStatsSync = nil
-		desktopLastFailureAt = nil
 	})
 }
 
@@ -69,13 +67,32 @@ func TestDesktopStatsRecordVisibleOnReturn(t *testing.T) {
 	}
 }
 
+func TestDesktopStatsRecordMatchesAndroidRules(t *testing.T) {
+	statsTestHome(t)
+	recordDesktopConnectivityStats("boundary", 1000, 1000)
+	recordDesktopConnectivityStats("short", 0, 1000)
+	recordDesktopConnectivityStats("short", 0, 1000)
+	recordDesktopConnectivityStats("unset", 0, 0)
+	data := desktopLoadStatsFromDisk().Data
+	today := desktopTodayKey(time.Now())
+	if got := data["boundary"].Days[today]; got.Success != 0 || got.Failure != 1 || got.DelaySum != 1000 {
+		t.Fatalf("delay equal to the deadline must fail: %+v", got)
+	}
+	if got := data["short"].Days[today]; got.Failure != 2 || got.DelaySum != 2000 {
+		t.Fatalf("repeated failures must each cost their deadline: %+v", got)
+	}
+	if got := data["unset"].Days[today]; got.DelaySum != desktopDefaultPenaltyDelayMs {
+		t.Fatalf("unset deadline penalty: %+v", got)
+	}
+}
+
 func TestDesktopStatsBatchPreservesResetAndSync(t *testing.T) {
 	statsTestHome(t)
 	now := time.Now()
 	failure := desktopStatsSample{name: "node", timeout: 5000, at: now}
 	persistDesktopStatsBatch([]desktopStatsSample{failure, failure})
-	if got := desktopLoadStatsFromDisk().Data["node"].Days[desktopTodayKey(now)].Failure; got != 1 {
-		t.Fatalf("duplicate failures: %d", got)
+	if got := desktopLoadStatsFromDisk().Data["node"].Days[desktopTodayKey(now)].Failure; got != 2 {
+		t.Fatalf("every completed failure must count: %d", got)
 	}
 	// Simulate a UI reset/sync transaction between completed batches.
 	raw := []byte(`{"v":2,"data":{"remote":{"days":{"` + desktopTodayKey(now) + `":{"s":7,"f":0}}}},"_sync":{"resetWatermarks":{"node":{"counter":2,"deviceId":"desktop"}}}}`)

@@ -18,8 +18,6 @@ const (
 	desktopStatsRetentionDays    = 30
 	desktopDefaultPenaltyDelayMs = 5000
 	desktopConnectivityStatsFile = "proxy-connectivity-stats.json"
-	// 同一节点一分钟内最多记 1 次失败，避免重连/健康检查风暴把分数打崩。
-	desktopFailureRecordMinInterval = time.Minute
 )
 
 type desktopDayCounts struct {
@@ -40,10 +38,9 @@ type desktopStatsFileV2 struct {
 }
 
 var (
-	desktopStatsMu       sync.Mutex
-	desktopStatsCache    map[string]desktopProxyEntry
-	desktopStatsSync     json.RawMessage
-	desktopLastFailureAt map[string]time.Time
+	desktopStatsMu    sync.Mutex
+	desktopStatsCache map[string]desktopProxyEntry
+	desktopStatsSync  json.RawMessage
 )
 
 func desktopStatsPath() string {
@@ -70,7 +67,7 @@ func desktopPruneDays(days map[string]desktopDayCounts, now time.Time) {
 	}
 }
 
-// desktopPruneExpiredEntries 清理过期天键；days 已空则删除 proxy 条目与对应 lastFailureAt。
+// desktopPruneExpiredEntries 清理过期天键；days 已空则删除 proxy 条目。
 // 调用方须已持有 desktopStatsMu。
 func desktopPruneExpiredEntries(now time.Time) {
 	if desktopStatsCache == nil {
@@ -79,25 +76,14 @@ func desktopPruneExpiredEntries(now time.Time) {
 	for name, entry := range desktopStatsCache {
 		if entry.Days == nil {
 			delete(desktopStatsCache, name)
-			delete(desktopLastFailureAt, name)
 			continue
 		}
 		desktopPruneDays(entry.Days, now)
 		if len(entry.Days) == 0 {
 			delete(desktopStatsCache, name)
-			delete(desktopLastFailureAt, name)
 			continue
 		}
 		desktopStatsCache[name] = entry
-	}
-	for name, at := range desktopLastFailureAt {
-		if _, ok := desktopStatsCache[name]; !ok {
-			delete(desktopLastFailureAt, name)
-			continue
-		}
-		if now.Sub(at) >= desktopFailureRecordMinInterval {
-			delete(desktopLastFailureAt, name)
-		}
 	}
 }
 
@@ -138,7 +124,7 @@ func desktopPersistStats() {
 }
 
 // recordDesktopConnectivityStats 由 Proxy.URLTest 回调：成功记真实 delay，失败记 timeout 惩罚。
-// 同一节点一分钟内的重复失败只记一次。
+// 成功与失败对称计数：只节流失败会高估不稳定节点，且与 Android 共享的计数口径不一致。
 func recordDesktopConnectivityStats(proxyName string, delay int, timeoutMs int) {
 	if proxyName == "" || proxyName == "DIRECT" || proxyName == "REJECT" {
 		return
@@ -151,7 +137,7 @@ func recordDesktopConnectivityStats(proxyName string, delay int, timeoutMs int) 
 	if effectiveTimeout <= 0 {
 		effectiveTimeout = desktopDefaultPenaltyDelayMs
 	}
-	isSuccess := delay > 0 && delay <= effectiveTimeout
+	isSuccess := delay > 0 && delay < effectiveTimeout
 
 	desktopStatsWriter.record(desktopStatsSample{
 		name: proxyName, delay: delay, timeout: effectiveTimeout,
@@ -168,32 +154,19 @@ func persistDesktopStatsBatch(samples []desktopStatsSample) {
 		file := desktopLoadStatsFromDisk()
 		desktopStatsCache = file.Data
 		desktopStatsSync = file.Sync
-		if desktopLastFailureAt == nil {
-			desktopLastFailureAt = make(map[string]time.Time)
+		if len(samples) == 0 {
+			return
 		}
-		changed := false
 		for _, sample := range samples {
-			if applyDesktopStatsSample(sample) {
-				changed = true
-			}
+			applyDesktopStatsSample(sample)
 		}
-		if changed {
-			desktopPruneExpiredEntries(time.Now())
-			desktopPersistStats()
-		}
+		desktopPruneExpiredEntries(time.Now())
+		desktopPersistStats()
 	})
 }
 
-func applyDesktopStatsSample(sample desktopStatsSample) bool {
+func applyDesktopStatsSample(sample desktopStatsSample) {
 	proxyName, now := sample.name, sample.at
-	if _, ok := desktopStatsCache[proxyName]; !ok {
-		delete(desktopLastFailureAt, proxyName)
-	}
-	if !sample.success {
-		if last, ok := desktopLastFailureAt[proxyName]; ok && now.Sub(last) < desktopFailureRecordMinInterval {
-			return false
-		}
-	}
 	entry := desktopStatsCache[proxyName]
 	if entry.Days == nil {
 		entry.Days = make(map[string]desktopDayCounts)
@@ -209,9 +182,7 @@ func applyDesktopStatsSample(sample desktopStatsSample) bool {
 	} else {
 		counts.Failure++
 		counts.DelaySum += sample.timeout
-		desktopLastFailureAt[proxyName] = now
 	}
 	entry.Days[day] = counts
 	desktopStatsCache[proxyName] = entry
-	return true
 }
