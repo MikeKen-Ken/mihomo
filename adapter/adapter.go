@@ -114,6 +114,26 @@ func (p *Proxy) ExtraDelayHistories() map[string]C.ProxyState {
 	return histories
 }
 
+// RememberPassedDelay records a delay already measured for this node under
+// another group's test URL. Startup reuse must not probe the node again.
+func (p *Proxy) RememberPassedDelay(url string, delay uint16) {
+	if p == nil || url == "" || delay == 0 {
+		return
+	}
+	record := C.DelayHistory{Time: time.Now(), Delay: delay}
+	state, _ := p.extra.LoadOrStoreFn(url, func() *internalProxyState {
+		return &internalProxyState{
+			history: queue.New[C.DelayHistory](defaultHistoriesNum),
+			alive:   atomic.NewBool(true),
+		}
+	})
+	state.alive.Store(true)
+	state.history.Put(record)
+	if state.history.Len() > defaultHistoriesNum {
+		state.history.Pop()
+	}
+}
+
 // LastDelayForTestUrl return last history record of the specified URL. if proxy is not alive, return the max value of uint16.
 // implements C.Proxy
 func (p *Proxy) LastDelayForTestUrl(url string) (delay uint16) {

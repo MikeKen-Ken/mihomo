@@ -139,6 +139,13 @@ func (gb *GroupBase) Icon() string {
 	return gb.icon
 }
 
+func (gb *GroupBase) DelayTestTimeoutMs() int {
+	if gb == nil || gb.TestTimeout <= 0 {
+		return 5000
+	}
+	return gb.TestTimeout
+}
+
 func (gb *GroupBase) Touch() {
 	for _, pd := range gb.providers {
 		pd.Touch()
