@@ -141,6 +141,8 @@ func (u *URLTest) healthCheck() {
 	u.healthCheckForSelection(u.selection.snapshot())
 }
 
+// healthCheckForSelection never releases the user's pin. Only an explicit
+// ClearManualSelection call from the user may do that.
 func (u *URLTest) healthCheckForSelection(selection manualSelectionSnapshot) {
 	started, previous := time.Now(), selection.name
 	u.fastNodeMux.Lock()
@@ -148,17 +150,11 @@ func (u *URLTest) healthCheckForSelection(selection manualSelectionSnapshot) {
 		previous = u.fastNode.Name()
 	}
 	u.fastNodeMux.Unlock()
-	candidate, conclusive := u.GroupBase.healthCheckCandidate(u.testUrl, u.expectedStatus)
+	candidate, _ := u.GroupBase.healthCheckCandidate(u.testUrl, u.expectedStatus)
 	if candidate == nil {
-		// Losing the race for the health-check guard says nothing about the
-		// pinned node, so it must not be the reason the pin survives.
-		if !conclusive {
-			u.clearManualSelectionIfUnchanged(selection)
-		}
 		return
 	}
 	u.recoveryHold.remember(candidate.Name())
-	u.clearManualSelectionIfUnchanged(selection)
 	u.fastSingle.Reset()
 	if previous != "" && candidate.Name() != previous && u.selection.snapshot().name == "" {
 		networkrecovery.RecordEvent("switch", started)
@@ -168,17 +164,6 @@ func (u *URLTest) healthCheckForSelection(selection manualSelectionSnapshot) {
 // NowIsManual implements NowIsManualAble.
 func (u *URLTest) NowIsManual() bool {
 	return u.selection.snapshot().name != ""
-}
-
-func (u *URLTest) clearManualSelectionIfUnchanged(selection manualSelectionSnapshot) {
-	if !u.selection.clearIfUnchanged(selection) {
-		return
-	}
-	u.fastNodeMux.Lock()
-	u.fastNode = nil
-	u.fastNodeMux.Unlock()
-	u.fastSingle.Reset()
-	u.onManualSelectionCleared()
 }
 
 func (u *URLTest) fastWithSelection(touch bool) (C.Proxy, manualSelectionSnapshot) {
@@ -197,9 +182,8 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 				return proxy
 			}
 		}
-		if selection.name != "" {
-			u.clearManualSelectionIfUnchanged(selection)
-		}
+		// The pinned node is missing from the group for now. Keep the pin and
+		// serve from the ordered list until the node is back.
 		if first != nil {
 			return first
 		}
@@ -209,7 +193,6 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		proxies := u.GetProxies(touch)
 		// 手动选择：立即生效，不等待该节点测速完成（与 Fallback 一致）
 		selection := u.selection.snapshot()
-		clearedSelection := false
 		if selection.name != "" {
 			for _, proxy := range proxies {
 				if proxy.Name() == selection.name {
@@ -218,16 +201,14 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 					return proxy, nil
 				}
 			}
-			clearedSelection = u.selection.clearIfUnchanged(selection)
+			// Pinned node is missing for now: keep the pin, use auto-select
+			// meanwhile.
 			u.fastNode = nil
 		}
 
 		if recovered := u.recoveryHold.current(proxies, u.testUrl, u.TestTimeout); recovered != nil {
 			u.fastNode = recovered
 			u.fastNodeMux.Unlock()
-			if clearedSelection {
-				u.onManualSelectionCleared()
-			}
 			return recovered, nil
 		}
 		fast := proxies[0]
@@ -256,9 +237,6 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		}
 		result := u.fastNode
 		u.fastNodeMux.Unlock()
-		if clearedSelection {
-			u.onManualSelectionCleared()
-		}
 		return result, nil
 	})
 	if shared && touch { // a shared fastSingle.Do() may cause providers untouched, so we touch them again

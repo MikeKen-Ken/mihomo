@@ -10,7 +10,6 @@ import (
 
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
-	P "github.com/metacubex/mihomo/constant/provider"
 )
 
 const testGroupURL = "https://www.gstatic.com/generate_204"
@@ -189,31 +188,3 @@ func TestStaleFallbackPrecheckDoesNotClearNewerSelection(t *testing.T) {
 	}
 }
 
-func TestFallbackHealthCheckUnpinsFailedNode(t *testing.T) {
-	dead := &groupMemberProxy{name: "node-a", delay: 0xffff}
-	dead.alive.Store(false)
-	alive := &groupMemberProxy{name: "node-b", delay: 80}
-	alive.alive.Store(true)
-	f := newTestFallback(1, dead, alive)
-	f.providers = []P.ProxyProvider{&readyTestProvider{members: []C.Proxy{dead, alive}, ready: true}}
-	persistence := &recordingManualSelectionPersistence{}
-	f.selectionPersistence = persistence
-	f.ForceSet("node-a")
-	selection := f.selection.snapshot()
-
-	if got := f.Now(); got != "node-a" {
-		t.Fatalf("pinned Now() = %q, want node-a", got)
-	}
-
-	f.healthCheckForProxy(dead, selection)
-
-	if f.NowIsManual() {
-		t.Fatal("pin remained after max-failed-times health check")
-	}
-	if got := f.Now(); got != "node-b" {
-		t.Fatalf("Now() after health check = %q, want node-b", got)
-	}
-	if got := persistence.cleared.Load(); got != 1 {
-		t.Fatalf("persisted selection clears = %d, want 1", got)
-	}
-}

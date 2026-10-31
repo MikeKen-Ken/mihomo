@@ -110,16 +110,3 @@ func TestURLTestFailedBackupCheckKeepsSelection(t *testing.T) {
 	}
 }
 
-func TestURLTestConcurrentHealthCheckReleasesPin(t *testing.T) {
-	dead := &groupMemberProxy{name: "dead", delay: 0xffff}
-	alive := &groupMemberProxy{name: "alive", delay: 80}
-	alive.alive.Store(true)
-	u := newFailedTimesURLTest(1, dead, alive)
-	u.providers = []P.ProxyProvider{&readyTestProvider{members: []C.Proxy{dead, alive}, ready: true}}
-	u.ForceSet("dead")
-	u.failedTesting.Store(true)
-	u.healthCheckForSelection(u.selection.snapshot())
-	if u.NowIsManual() {
-		t.Fatal("pin survived a health check that never ran")
-	}
-}

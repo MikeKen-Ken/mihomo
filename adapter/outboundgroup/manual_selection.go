@@ -41,20 +41,6 @@ func (s *manualSelectionState) clear() bool {
 	return true
 }
 
-func (s *manualSelectionState) clearIfUnchanged(expected manualSelectionSnapshot) bool {
-	if expected.name == "" {
-		return false
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.name != expected.name || s.generation != expected.generation {
-		return false
-	}
-	s.name = ""
-	s.generation++
-	return true
-}
-
 type manualSelectionPersistence interface {
 	Clear(groupName string)
 }

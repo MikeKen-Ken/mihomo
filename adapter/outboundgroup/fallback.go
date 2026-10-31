@@ -94,17 +94,14 @@ func (f *Fallback) healthCheck() {
 func (f *Fallback) healthCheckForProxy(proxy C.Proxy, selection manualSelectionSnapshot) {
 	if proxy == nil {
 		log.Warnln("[应用] fallback 范围健康检测\tgroup=%s\tproxy=<nil>\tscope=仅自身", f.Name())
-		candidate, conclusive := f.GroupBase.healthCheckCandidate(f.testUrl, f.expectedStatus)
+		candidate, _ := f.GroupBase.healthCheckCandidate(f.testUrl, f.expectedStatus)
 		if candidate == nil {
-			// Losing the race for the health-check guard says nothing about the
-			// pinned node, so it must not be the reason the pin survives.
-			if !conclusive {
-				f.clearManualSelectionIfUnchanged(selection)
-			}
 			return
 		}
 		f.stable.remember(candidate.Name())
-		f.clearManualSelectionIfUnchanged(selection)
+		if f.selection.snapshot().name != "" {
+			return // the user's pin stays; nothing switches
+		}
 		closed := statistic.DefaultManager.CloseConnectionsUsingProxyGroup(f.Name())
 		log.Warnln("[应用] fallback 范围关闭连接\tgroup=%s\tproxy=<nil>\tclosed=%d", f.Name(), closed)
 		return
@@ -116,16 +113,15 @@ func (f *Fallback) healthCheckForProxy(proxy C.Proxy, selection manualSelectionS
 	groupNamesLog := make([]string, 0, len(targets))
 	for _, target := range targets {
 		started := time.Now()
-		candidate, conclusive := target.group.GroupBase.healthCheckCandidate(target.group.testUrl, target.group.expectedStatus)
+		candidate, _ := target.group.GroupBase.healthCheckCandidate(target.group.testUrl, target.group.expectedStatus)
 		if candidate == nil {
-			if !conclusive {
-				target.group.clearManualSelectionIfUnchanged(target.selection)
-			}
 			continue
 		}
 		target.group.stable.remember(candidate.Name())
-		target.group.clearManualSelectionIfUnchanged(target.selection)
-		if candidate.Name() != proxyName && target.group.selection.snapshot().name == "" {
+		if target.group.selection.snapshot().name != "" {
+			continue // the user's pin stays; this group does not switch
+		}
+		if candidate.Name() != proxyName {
 			networkrecovery.RecordEvent("switch", started)
 		}
 		if candidate.Name() == proxyName {
@@ -231,8 +227,7 @@ func (f *Fallback) findAliveProxyWithSelection(touch bool) (C.Proxy, manualSelec
 				return proxy, selection // 直接返回，不检查延迟或健康状态
 			}
 		}
-		// 选择的节点不存在于列表中（可能被移除），清空选择
-		f.clearManualSelectionIfUnchanged(selection)
+		// 选择的节点暂时不在列表中：保留固定，期间按自动模式选节点，节点回来后继续用它。
 		selection = manualSelectionSnapshot{}
 	}
 
@@ -318,12 +313,6 @@ func (f *Fallback) NowIsManual() bool {
 // ClearManualSelection clears the fixed selected node so the group auto-picks first alive.
 func (f *Fallback) ClearManualSelection() {
 	if f.selection.clear() {
-		f.onManualSelectionCleared()
-	}
-}
-
-func (f *Fallback) clearManualSelectionIfUnchanged(selection manualSelectionSnapshot) {
-	if f.selection.clearIfUnchanged(selection) {
 		f.onManualSelectionCleared()
 	}
 }

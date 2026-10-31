@@ -32,14 +32,12 @@ func TestRecoveryUsesVerifiedBackupInsteadOfStaleAliveFlag(t *testing.T) {
 	provider := &winningProvider{readyTestProvider: readyTestProvider{members: members}, winner: good}
 	f := newTestFallback(1, members...)
 	f.providers = []P.ProxyProvider{provider}
-	f.ForceSet("dead")
 	f.healthCheckForProxy(dead, f.selection.snapshot())
 	if f.Now() != "verified" {
 		t.Fatalf("fallback picked %s", f.Now())
 	}
 	u := newFailedTimesURLTest(1, members...)
 	u.providers = []P.ProxyProvider{provider}
-	u.ForceSet("dead")
 	u.healthCheckForSelection(u.selection.snapshot())
 	if u.Now() != "verified" {
 		t.Fatalf("url-test picked %s", u.Now())
