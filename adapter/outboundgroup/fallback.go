@@ -219,7 +219,7 @@ func (f *Fallback) findAliveProxyWithSelection(touch bool) (C.Proxy, manualSelec
 		timeoutMs = 5000
 	}
 
-	// 手动选择模式：节点仍可用时固定使用。max-failed-times 健康检测会清钉。
+	// 手动选择模式：节点在列表中就固定使用，不检查延迟或健康状态；只有用户手动取消才会释放。
 	selection := f.selection.snapshot()
 	if selection.name != "" {
 		for _, proxy := range proxies {
@@ -277,7 +277,7 @@ func (f *Fallback) Set(name string) error {
 		return errors.New("proxy not exist")
 	}
 
-	// 立即切换到用户选择的节点并固定使用。拨号失败本身不换节点；max-failed-times 健康检测会清钉。
+	// 立即切换到用户选择的节点并固定使用。拨号失败、健康检测都不会换节点或释放固定。
 	f.selection.set(name)
 
 	// 异步健康检测：仅用于更新延迟显示，不根据结果修改 selected

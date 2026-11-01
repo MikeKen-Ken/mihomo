@@ -97,9 +97,15 @@ func updateProxy(w http.ResponseWriter, r *http.Request) {
 			selector.ForceSet("")
 		}
 	} else if err := selector.Set(req.Name); err != nil {
-		render.Status(r, http.StatusBadRequest)
-		render.JSON(w, r, newError(fmt.Sprintf("Selector update error: %s", err.Error())))
-		return
+		if !req.Force {
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, newError(fmt.Sprintf("Selector update error: %s", err.Error())))
+			return
+		}
+		// A forced select is how a saved pin is restored after a reload. The
+		// node may not be in the group yet (a provider is still loading), and
+		// the pin must still be recorded so it takes effect once it appears.
+		selector.ForceSet(req.Name)
 	} else if req.Force {
 		selector.ForceSet(req.Name)
 	}
