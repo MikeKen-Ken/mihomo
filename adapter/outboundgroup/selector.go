@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/common/utils"
@@ -13,9 +14,12 @@ import (
 
 type Selector struct {
 	*GroupBase
-	disableUDP      bool
+	disableUDP bool
+
+	selectionMu     sync.RWMutex
 	selected        string
-	manualSelected  bool // true only after user or persist Set(); cleared by ClearManualSelection/health/stop
+	manualSelected  bool   // true only after user or persist Set(); cleared by ClearManualSelection/health/stop
+	defaultSelected string // implicit default, latched to the first resolved member; survives member reordering
 	testUrl         string
 	expectedStatus  string
 	selectedTimeout int // ms, for manual-selected node delay test; 0 = skip
@@ -83,7 +87,11 @@ func (s *Selector) MarshalJSON() ([]byte, error) {
 }
 
 func (s *Selector) Now() string {
-	return s.selectedProxy(false).Name()
+	proxy := s.selectedProxy(false)
+	if proxy == nil {
+		return ""
+	}
+	return proxy.Name()
 }
 
 func (s *Selector) Set(name string) error {
@@ -91,14 +99,17 @@ func (s *Selector) Set(name string) error {
 	for _, proxy := range s.GetProxies(false) {
 		if proxy.Name() == name {
 			selectedProxy = proxy
-			s.selected = name
-			s.manualSelected = true
 			break
 		}
 	}
 	if selectedProxy == nil {
 		return errors.New("proxy not exist")
 	}
+
+	s.selectionMu.Lock()
+	s.selected = name
+	s.manualSelected = true
+	s.selectionMu.Unlock()
 
 	// 异步测速：手动选择的节点在后台测速，不阻塞返回（与安卓端体验对齐）
 	if s.selectedTimeout > 0 && s.testUrl != "" {
@@ -117,19 +128,25 @@ func (s *Selector) Set(name string) error {
 }
 
 func (s *Selector) ForceSet(name string) {
+	s.selectionMu.Lock()
 	s.selected = name
 	s.manualSelected = name != ""
+	s.selectionMu.Unlock()
 }
 
 // NowIsManual implements NowIsManualAble.
 func (s *Selector) NowIsManual() bool {
+	s.selectionMu.RLock()
+	defer s.selectionMu.RUnlock()
 	return s.manualSelected
 }
 
 // ClearManualSelection clears manual flag without changing current selected node.
 // 这样测速流程不会把当前节点强制切到列表第一个（可能是超时节点）。
 func (s *Selector) ClearManualSelection() {
+	s.selectionMu.Lock()
 	s.manualSelected = false
+	s.selectionMu.Unlock()
 }
 
 // Unwrap implements C.ProxyAdapter
@@ -139,11 +156,40 @@ func (s *Selector) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 
 func (s *Selector) selectedProxy(touch bool) C.Proxy {
 	proxies := s.GetProxies(touch)
+	if len(proxies) == 0 {
+		return nil
+	}
+
+	s.selectionMu.RLock()
+	selected := s.selected
+	defaultSelected := s.defaultSelected
+	s.selectionMu.RUnlock()
+
 	for _, proxy := range proxies {
-		if proxy.Name() == s.selected {
+		if proxy.Name() == selected {
 			return proxy
 		}
 	}
+
+	// No pin is active (fresh group, cleared pin, or the pinned member vanished).
+	// Fall back to the implicit default that was latched when the group first
+	// resolved its members instead of a freshly computed proxies[0]: provider
+	// refreshes and connectivity ordering may reorder a select group's member
+	// list, and the effective outbound must not silently follow that order.
+	if defaultSelected != "" {
+		for _, proxy := range proxies {
+			if proxy.Name() == defaultSelected {
+				return proxy
+			}
+		}
+		return proxies[0]
+	}
+
+	s.selectionMu.Lock()
+	if s.defaultSelected == "" {
+		s.defaultSelected = proxies[0].Name()
+	}
+	s.selectionMu.Unlock()
 
 	return proxies[0]
 }
