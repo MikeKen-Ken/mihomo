@@ -7,14 +7,14 @@ import (
 	P "github.com/metacubex/mihomo/constant/provider"
 )
 
-// 选择组的默认节点是"组首次解析成员时的第一个成员"，不是每次取当前列表第一个。
-// 否则 provider 刷新/联通评分重排会把 Direct 组从 DIRECT 悄悄切到 Auto。
+// 选择组没有手动固定时用首次解析到的第一个成员。之后列表重排也不改这个默认，
+// 取消手动选择会回到它。只有手动固定才会离开第一个成员。
 func TestSelectorDefaultSurvivesMemberReorder(t *testing.T) {
 	direct := &groupMemberProxy{name: "DIRECT"}
 	auto := &groupMemberProxy{name: "Auto"}
 	jp := &groupMemberProxy{name: "JP"}
 
-	s := NewSelector(&GroupCommonOption{Name: "Direct"}, []P.ProxyProvider{
+	s := NewSelector(&GroupCommonOption{Name: "Nodes"}, []P.ProxyProvider{
 		&orderedTestProvider{version: 1, members: []C.Proxy{direct, auto, jp}},
 	})
 	provider := s.providers[0].(*orderedTestProvider)
@@ -37,7 +37,7 @@ func TestSelectorDefaultSurvivesMemberReorder(t *testing.T) {
 		t.Fatalf("displayed order = %q, want the new member order", got)
 	}
 
-	// An explicit pin wins and survives a reorder; unpinning keeps the node.
+	// An explicit pin wins and survives a reorder. Unpinning returns to the first member.
 	if err := s.Set("JP"); err != nil {
 		t.Fatalf("Set(JP): %v", err)
 	}
@@ -53,8 +53,8 @@ func TestSelectorDefaultSurvivesMemberReorder(t *testing.T) {
 	if s.NowIsManual() {
 		t.Fatal("ClearManualSelection kept the manual flag")
 	}
-	if got := s.Now(); got != "JP" {
-		t.Fatalf("unpin changed the node to %q, want JP kept", got)
+	if got := s.Now(); got != "DIRECT" {
+		t.Fatalf("unpin = %q, want the first member DIRECT", got)
 	}
 
 	// The latched default vanished from the group: fall back to the first member.
@@ -66,7 +66,7 @@ func TestSelectorDefaultSurvivesMemberReorder(t *testing.T) {
 }
 
 func TestSelectorDefaultIsFirstMemberWithoutPin(t *testing.T) {
-	s := NewSelector(&GroupCommonOption{Name: "Direct"}, []P.ProxyProvider{
+	s := NewSelector(&GroupCommonOption{Name: "Nodes"}, []P.ProxyProvider{
 		&orderedTestProvider{
 			version: 1,
 			members: []C.Proxy{
@@ -77,5 +77,20 @@ func TestSelectorDefaultIsFirstMemberWithoutPin(t *testing.T) {
 	})
 	if got := s.Now(); got != "DIRECT" {
 		t.Fatalf("Now() = %q, want first member DIRECT", got)
+	}
+}
+
+func TestOtherSelectorStillDefaultsToFirstMember(t *testing.T) {
+	s := NewSelector(&GroupCommonOption{Name: "Final"}, []P.ProxyProvider{
+		&orderedTestProvider{
+			version: 1,
+			members: []C.Proxy{
+				&groupMemberProxy{name: "Auto"},
+				&groupMemberProxy{name: "DIRECT"},
+			},
+		},
+	})
+	if got := s.Now(); got != "Auto" {
+		t.Fatalf("Now() = %q, want first member Auto", got)
 	}
 }

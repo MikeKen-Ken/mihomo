@@ -141,11 +141,11 @@ func (s *Selector) NowIsManual() bool {
 	return s.manualSelected
 }
 
-// ClearManualSelection clears manual flag without changing current selected node.
-// 这样测速流程不会把当前节点强制切到列表第一个（可能是超时节点）。
+// ClearManualSelection drops the manual pin. The group then uses its first member again.
 func (s *Selector) ClearManualSelection() {
 	s.selectionMu.Lock()
 	s.manualSelected = false
+	s.selected = ""
 	s.selectionMu.Unlock()
 }
 
@@ -162,36 +162,43 @@ func (s *Selector) selectedProxy(touch bool) C.Proxy {
 
 	s.selectionMu.RLock()
 	selected := s.selected
+	manual := s.manualSelected
 	defaultSelected := s.defaultSelected
 	s.selectionMu.RUnlock()
 
-	for _, proxy := range proxies {
-		if proxy.Name() == selected {
-			return proxy
+	// Only an explicit pin may leave the first member. The constructor stores
+	// "COMPATIBLE" in selected, and that placeholder is not a pin.
+	if manual && selected != "" {
+		for _, proxy := range proxies {
+			if proxy.Name() == selected {
+				return proxy
+			}
 		}
 	}
 
-	// No pin is active (fresh group, cleared pin, or the pinned member vanished).
-	// Fall back to the implicit default that was latched when the group first
-	// resolved its members instead of a freshly computed proxies[0]: provider
-	// refreshes and connectivity ordering may reorder a select group's member
-	// list, and the effective outbound must not silently follow that order.
+	// No pin: stay on the member that was first when this group first resolved.
+	// A later reorder of the same list must not move the effective outbound.
 	if defaultSelected != "" {
 		for _, proxy := range proxies {
 			if proxy.Name() == defaultSelected {
 				return proxy
 			}
 		}
-		return proxies[0]
 	}
 
+	s.latchDefault(proxies[0].Name())
+	return proxies[0]
+}
+
+func (s *Selector) latchDefault(name string) {
+	if name == "" {
+		return
+	}
 	s.selectionMu.Lock()
 	if s.defaultSelected == "" {
-		s.defaultSelected = proxies[0].Name()
+		s.defaultSelected = name
 	}
 	s.selectionMu.Unlock()
-
-	return proxies[0]
 }
 
 func (s *Selector) Providers() []P.ProxyProvider {
