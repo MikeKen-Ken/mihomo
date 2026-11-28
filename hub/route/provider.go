@@ -115,6 +115,7 @@ func ruleProviderRouter() http.Handler {
 	r.Get("/", getRuleProviders)
 	r.Route("/{name}", func(r chi.Router) {
 		r.Use(parseRuleProviderName, findRuleProviderByName)
+		r.Get("/", getRuleProviderPreview)
 		r.Put("/", updateRuleProvider)
 	})
 	return r

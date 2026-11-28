@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	syncatomic "sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
@@ -63,12 +64,23 @@ var (
 	udpTimeout = 60 * time.Second
 
 	findProcessMode = atomic.NewInt32Enum(process.FindProcessStrict)
+	lanMaxDevices   int32
+	// 0 = reject, 1 = drop
+	lanOverLimitAction  int32
+	lanDeviceLimitCache = struct {
+		sync.Mutex
+		expires time.Time
+		limit   int
+		devices map[netip.Addr]struct{}
+	}{}
 
 	snifferDispatcher *sniffer.Dispatcher
 	sniffingEnable    = false
 
 	ruleUpdateCallback = utils.NewCallback[P.RuleProvider]()
 )
+
+const lanDeviceLimitCacheTTL = time.Second
 
 type tunnel struct{}
 
@@ -277,6 +289,124 @@ func SetFindProcessMode(mode process.FindProcessMode) {
 	findProcessMode.Store(mode)
 }
 
+func SetLanDeviceLimit(limit int, action string) {
+	if limit < 0 {
+		limit = 0
+	}
+	syncatomic.StoreInt32(&lanMaxDevices, int32(limit))
+	invalidateLanDeviceLimitCache()
+	if strings.EqualFold(strings.TrimSpace(action), "drop") {
+		syncatomic.StoreInt32(&lanOverLimitAction, 1)
+		return
+	}
+	syncatomic.StoreInt32(&lanOverLimitAction, 0)
+}
+
+func invalidateLanDeviceLimitCache() {
+	lanDeviceLimitCache.Lock()
+	lanDeviceLimitCache.expires = time.Time{}
+	lanDeviceLimitCache.limit = 0
+	lanDeviceLimitCache.devices = nil
+	lanDeviceLimitCache.Unlock()
+}
+
+func LanMaxDevices() int {
+	return int(syncatomic.LoadInt32(&lanMaxDevices))
+}
+
+func LanOverLimitAction() string {
+	if syncatomic.LoadInt32(&lanOverLimitAction) == 1 {
+		return "drop"
+	}
+	return "reject"
+}
+
+func isLanSourceIP(addr netip.Addr) bool {
+	if !addr.IsValid() {
+		return false
+	}
+	addr = addr.Unmap()
+	if addr.IsLoopback() || addr.IsUnspecified() || addr.IsMulticast() {
+		return false
+	}
+	if addr.IsPrivate() {
+		return true
+	}
+	// IPv6 link-local can also represent LAN devices.
+	return addr.Is6() && addr.IsLinkLocalUnicast()
+}
+
+func checkLanDeviceLimit(sourceIP netip.Addr) bool {
+	limit := int(syncatomic.LoadInt32(&lanMaxDevices))
+	if limit <= 0 || !isLanSourceIP(sourceIP) {
+		return true
+	}
+	sourceIP = sourceIP.Unmap()
+
+	now := time.Now()
+	lanDeviceLimitCache.Lock()
+	if lanDeviceLimitCache.devices != nil &&
+		lanDeviceLimitCache.limit == limit &&
+		now.Before(lanDeviceLimitCache.expires) {
+		if _, ok := lanDeviceLimitCache.devices[sourceIP]; ok {
+			lanDeviceLimitCache.Unlock()
+			return true
+		}
+		if len(lanDeviceLimitCache.devices) < limit {
+			lanDeviceLimitCache.devices[sourceIP] = struct{}{}
+			lanDeviceLimitCache.Unlock()
+			return true
+		}
+		lanDeviceLimitCache.Unlock()
+		return false
+	}
+	lanDeviceLimitCache.Unlock()
+
+	deviceSet := make(map[netip.Addr]struct{}, limit+1)
+	alreadyTracked := false
+	statistic.DefaultManager.Range(func(c statistic.Tracker) bool {
+		info := c.Info()
+		if info == nil || info.Metadata == nil {
+			return true
+		}
+		ip := info.Metadata.SrcIP.Unmap()
+		if !isLanSourceIP(ip) {
+			return true
+		}
+		deviceSet[ip] = struct{}{}
+		if ip == sourceIP {
+			alreadyTracked = true
+		}
+		return true
+	})
+	if alreadyTracked {
+		lanDeviceLimitCache.Lock()
+		lanDeviceLimitCache.expires = now.Add(lanDeviceLimitCacheTTL)
+		lanDeviceLimitCache.limit = limit
+		lanDeviceLimitCache.devices = deviceSet
+		lanDeviceLimitCache.Unlock()
+		return true
+	}
+	allowed := len(deviceSet) < limit
+	if allowed {
+		deviceSet[sourceIP] = struct{}{}
+	}
+	lanDeviceLimitCache.Lock()
+	lanDeviceLimitCache.expires = now.Add(lanDeviceLimitCacheTTL)
+	lanDeviceLimitCache.limit = limit
+	lanDeviceLimitCache.devices = deviceSet
+	lanDeviceLimitCache.Unlock()
+	return allowed
+}
+
+func logLanDeviceOverLimit(metadata *C.Metadata) {
+	if syncatomic.LoadInt32(&lanOverLimitAction) == 1 {
+		log.Warnln("[LAN device limit] Dropping over-limit device source=%s limit=%d", metadata.SourceAddress(), LanMaxDevices())
+		return
+	}
+	log.Warnln("[LAN device limit] Rejecting over-limit device source=%s limit=%d", metadata.SourceAddress(), LanMaxDevices())
+}
+
 func isHandle(t C.Type) bool {
 	status := status.Load()
 	return status == Running || (status == Inner && t == C.INNER)
@@ -314,6 +444,7 @@ func preHandleMetadata(metadata *C.Metadata) error {
 				metadata.Host = node.Domain
 			}
 		} else if resolver.IsFakeIP(metadata.DstIP) {
+			resolver.OnFakeIPRecordMissing(metadata.DstIP)
 			return fmt.Errorf("fake DNS record %s missing", metadata.DstIP)
 		}
 	} else if node, ok := resolver.DefaultHosts.Search(metadata.Host, true); ok {
@@ -427,6 +558,27 @@ func processUDP(queue chan C.PacketAdapter) {
 	}
 }
 
+func countProxyRequest(proxy C.Proxy, metadata *C.Metadata) {
+	countProxyRequestRecursive(proxy, metadata, map[string]struct{}{})
+}
+
+func countProxyRequestRecursive(proxy C.Proxy, metadata *C.Metadata, seen map[string]struct{}) {
+	if proxy == nil {
+		return
+	}
+	name := proxy.Name()
+	if _, ok := seen[name]; ok {
+		return
+	}
+	seen[name] = struct{}{}
+
+	adapter := proxy.Adapter()
+	if counter, ok := adapter.(C.RequestCounter); ok {
+		counter.CountRequest(metadata)
+	}
+	countProxyRequestRecursive(adapter.Unwrap(metadata, false), metadata, seen)
+}
+
 func handleUDPConn(packet C.PacketAdapter) {
 	if !isHandle(packet.Metadata().Type) {
 		packet.Drop()
@@ -456,6 +608,13 @@ func handleUDPConn(packet C.PacketAdapter) {
 		return sender
 	})
 	if !loaded {
+		if !checkLanDeviceLimit(metadata.SrcIP) {
+			packet.Drop()
+			logLanDeviceOverLimit(metadata)
+			sender.Close()
+			natTable.Delete(key)
+			return
+		}
 		dial := func() (C.PacketConn, C.WriteBackProxy, error) {
 			originMetadata := metadata  // save origin metadata
 			metadata = metadata.Clone() // don't modify PacketAdapter's metadata
@@ -472,6 +631,7 @@ func handleUDPConn(packet C.PacketAdapter) {
 				log.Warnln("[UDP] Parse metadata failed: %s", err.Error())
 				return nil, nil, err
 			}
+			countProxyRequest(proxy, metadata)
 
 			dialMetadata := metadata.Pure()
 			ctx, cancel := context.WithTimeout(context.Background(), C.DefaultUDPTimeout)
@@ -550,6 +710,10 @@ func handleTCPConn(connCtx C.ConnContext) {
 			metadata.SourceDetail(), metadata.RemoteAddress())
 		return
 	}
+	if !checkLanDeviceLimit(metadata.SrcIP) {
+		logLanDeviceOverLimit(metadata)
+		return
+	}
 
 	peekMutex := sync.Mutex{}
 	if !conn.Peeked() {
@@ -567,6 +731,7 @@ func handleTCPConn(connCtx C.ConnContext) {
 		log.Warnln("[Metadata] parse failed: %s", err.Error())
 		return
 	}
+	countProxyRequest(proxy, metadata)
 
 	dialMetadata := metadata
 	if len(metadata.Host) > 0 {

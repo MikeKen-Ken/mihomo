@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/hub/executor"
 	"github.com/metacubex/mihomo/tunnel"
 
 	"github.com/metacubex/chi"
@@ -15,9 +16,21 @@ func ruleRouter() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/", getRules)
 	if !embedMode { // disallow update/patch rules in embed mode
+		r.Put("/", updateRulesFromConfig)
 		r.Patch("/disable", disableRules)
 	}
 	return r
+}
+
+func updateRulesFromConfig(w http.ResponseWriter, r *http.Request) {
+	cfg, status, err := loadRequestedConfig(r)
+	if err != nil {
+		render.Status(r, status)
+		render.JSON(w, r, newError(err.Error()))
+		return
+	}
+	executor.ApplyRulesOnly(cfg)
+	render.NoContent(w, r)
 }
 
 type Rule struct {

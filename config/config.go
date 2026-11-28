@@ -64,9 +64,11 @@ type General struct {
 	Sniffing          bool                    `json:"sniffing"`
 	GlobalUA          string                  `json:"global-ua"`
 	ETagSupport       bool                    `json:"etag-support"`
-	KeepAliveIdle     int                     `json:"keep-alive-idle"`
-	KeepAliveInterval int                     `json:"keep-alive-interval"`
-	DisableKeepAlive  bool                    `json:"disable-keep-alive"`
+	KeepAliveIdle      int                     `json:"keep-alive-idle"`
+	KeepAliveInterval  int                     `json:"keep-alive-interval"`
+	DisableKeepAlive   bool                    `json:"disable-keep-alive"`
+	LanMaxDevices      int                     `json:"lan-max-devices"`
+	LanOverLimitAction string                  `json:"lan-over-limit-action"`
 }
 
 // Inbound config
@@ -257,8 +259,20 @@ type RawFallbackFilter struct {
 }
 
 type RawClashForAndroid struct {
-	AppendSystemDNS   bool   `yaml:"append-system-dns" json:"append-system-dns"`
-	UiSubtitlePattern string `yaml:"ui-subtitle-pattern" json:"ui-subtitle-pattern"`
+	AppendSystemDNS    bool               `yaml:"append-system-dns" json:"append-system-dns"`
+	UiSubtitlePattern  string             `yaml:"ui-subtitle-pattern" json:"ui-subtitle-pattern"`
+	LanBlockedDevices  []string           `yaml:"lan-blocked-devices" json:"lan-blocked-devices"`
+	LanMaxDevices      int                `yaml:"lan-max-devices" json:"lan-max-devices"`
+	LanOverLimitAction string             `yaml:"lan-over-limit-action" json:"lan-over-limit-action"`
+	TemporaryRules     []RawTemporaryRule `yaml:"temporary-rules" json:"temporary-rules"`
+}
+
+// RawTemporaryRule is an application-only override, inserted before profile rules in rule mode.
+type RawTemporaryRule struct {
+	ID       string `yaml:"id" json:"id"`
+	RuleType string `yaml:"rule-type" json:"rule-type"`
+	Payload  string `yaml:"payload" json:"payload"`
+	Target   string `yaml:"target" json:"target"`
 }
 
 type RawNTP struct {
@@ -468,7 +482,8 @@ type RawConfig struct {
 	Sniffer       RawSniffer                `yaml:"sniffer" json:"sniffer"`
 	TLS           RawTLS                    `yaml:"tls" json:"tls"`
 
-	ClashForAndroid RawClashForAndroid `yaml:"clash-for-android" json:"clash-for-android"`
+	ClashForAndroid            RawClashForAndroid `yaml:"clash-for-android" json:"clash-for-android"`
+	CfaProxyDelayTestTimeoutMs int                `yaml:"cfa-proxy-delay-test-timeout-ms,omitempty" json:"cfa-proxy-delay-test-timeout-ms,omitempty"`
 }
 
 // Parse config
@@ -626,6 +641,7 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 	config := &Config{}
 	log.Infoln("Start initial configuration in progress") //Segment finished in xxm
 	startTime := time.Now()
+	rawCfg.Rule = prependBlockedDeviceRules(rawCfg.Rule, rawCfg.ClashForAndroid.LanBlockedDevices)
 
 	general, err := parseGeneral(rawCfg)
 	if err != nil {
@@ -755,10 +771,50 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 	return config, nil
 }
 
+func prependBlockedDeviceRules(rules []string, blockedDevices []string) []string {
+	if len(blockedDevices) == 0 {
+		return rules
+	}
+
+	prefixRules := make([]string, 0, len(blockedDevices))
+	existing := make(map[string]struct{}, len(rules))
+	for _, rule := range rules {
+		existing[rule] = struct{}{}
+	}
+
+	for _, device := range blockedDevices {
+		ip := strings.TrimSpace(device)
+		if ip == "" {
+			continue
+		}
+		cidr := ip
+		if !strings.Contains(cidr, "/") {
+			cidr += "/32"
+		}
+		rule := fmt.Sprintf("SRC-IP-CIDR,%s,REJECT-DROP", cidr)
+		if _, ok := existing[rule]; ok {
+			continue
+		}
+		existing[rule] = struct{}{}
+		prefixRules = append(prefixRules, rule)
+	}
+
+	if len(prefixRules) == 0 {
+		return rules
+	}
+	return append(prefixRules, rules...)
+}
+
 //go:linkname temporaryUpdateGeneral
 func temporaryUpdateGeneral(general *General) func()
 
 func parseGeneral(cfg *RawConfig) (*General, error) {
+	lanMaxDevices := cfg.ClashForAndroid.LanMaxDevices
+	if lanMaxDevices < 0 {
+		lanMaxDevices = 0
+	}
+	lanOverLimitAction := strings.ToLower(strings.TrimSpace(cfg.ClashForAndroid.LanOverLimitAction))
+
 	if cfg.GlobalClientFingerprint != "" {
 		log.Errorln("The `global-client-fingerprint` configuration is removed, please set `client-fingerprint` directly on the proxy instead")
 	}
@@ -800,9 +856,11 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 		FindProcessMode:   cfg.FindProcessMode,
 		GlobalUA:          cfg.GlobalUA,
 		ETagSupport:       cfg.ETagSupport,
-		KeepAliveIdle:     cfg.KeepAliveIdle,
-		KeepAliveInterval: cfg.KeepAliveInterval,
-		DisableKeepAlive:  cfg.DisableKeepAlive,
+		KeepAliveIdle:      cfg.KeepAliveIdle,
+		KeepAliveInterval:  cfg.KeepAliveInterval,
+		DisableKeepAlive:   cfg.DisableKeepAlive,
+		LanMaxDevices:      lanMaxDevices,
+		LanOverLimitAction: lanOverLimitAction,
 	}, nil
 }
 

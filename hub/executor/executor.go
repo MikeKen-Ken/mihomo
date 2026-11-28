@@ -6,7 +6,9 @@ import (
 	"net/netip"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	_ "unsafe"
@@ -42,7 +44,10 @@ import (
 	"github.com/metacubex/mihomo/tunnel"
 )
 
-var mux sync.Mutex
+var (
+	mux             sync.Mutex
+	lastDNSStateKey string
+)
 
 func readConfig(path string) ([]byte, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -120,6 +125,20 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	updateUpdater(cfg)
 
 	resolver.ResetConnection()
+}
+
+// ApplyRulesOnly hot-swaps the rule matcher without suspending the tunnel,
+// recreating TUN/inbounds, or re-initializing providers. Existing connections
+// keep flowing; new connections use the updated rules immediately.
+func ApplyRulesOnly(cfg *config.Config) {
+	mux.Lock()
+	defer mux.Unlock()
+	providers := tunnel.RuleProviders()
+	if len(providers) == 0 {
+		providers = cfg.RuleProviders
+	}
+	updateRules(cfg.Rules, cfg.SubRules, providers)
+	log.Infoln("Rules updated without full config reload")
 }
 
 func initInnerTcp() {
@@ -236,6 +255,17 @@ func updateNTP(c *config.NTP) {
 }
 
 func updateDNS(c *config.DNS, generalIPv6 bool) {
+	dnsStateKey := makeDNSStateKey(c, generalIPv6)
+	if lastDNSStateKey != "" && lastDNSStateKey != dnsStateKey {
+		tunnel.CloseAllConnections()
+		if err := resolver.FlushFakeIP(); err != nil {
+			log.Warnln("[DNS] Failed to clear mappings after DNS/Fake-IP configuration change: %s", err)
+		} else {
+			log.Infoln("[DNS] DNS/Fake-IP configuration changed; closed old connections and cleared mappings and cache")
+		}
+	}
+	lastDNSStateKey = dnsStateKey
+
 	if !c.Enable {
 		resolver.DefaultResolver = nil
 		resolver.DefaultHostMapper = nil
@@ -301,6 +331,56 @@ func updateDNS(c *config.DNS, generalIPv6 bool) {
 	lc := inbound.NewListenConfig()
 	lc.SetRouteMark(c.ListenRoutingMark)
 	dns.ReCreateServer(c.Listen, lc, s)
+}
+
+func makeDNSStateKey(c *config.DNS, generalIPv6 bool) string {
+	return fmt.Sprintf(
+		"%t|%t|%t|%s|%s|%d|%s|%v|%s|%s|%s|%s|%s|%s|%s|%t",
+		c.Enable,
+		c.IPv6,
+		generalIPv6,
+		c.EnhancedMode,
+		c.FakeIPRange,
+		c.FakeIPTTL,
+		c.FakeIPRange6,
+		c.FakeIPSkipper,
+		nameServerStateKey(c.NameServer),
+		nameServerStateKey(c.Fallback),
+		nameServerStateKey(c.DefaultNameserver),
+		dnsPolicyStateKey(c.NameServerPolicy),
+		nameServerStateKey(c.ProxyServerNameserver),
+		dnsPolicyStateKey(c.ProxyServerPolicy),
+		nameServerStateKey(c.DirectNameServer),
+		c.DirectFollowPolicy,
+	)
+}
+
+func nameServerStateKey(servers []dns.NameServer) string {
+	parts := make([]string, 0, len(servers))
+	for _, server := range servers {
+		params := make([]string, 0, len(server.Params))
+		for key, value := range server.Params {
+			params = append(params, key+"="+value)
+		}
+		sort.Strings(params)
+		parts = append(parts, fmt.Sprintf(
+			"%s@%s#%s#%t#%s",
+			server.Net,
+			server.Addr,
+			server.ProxyName,
+			server.PreferH3,
+			strings.Join(params, ","),
+		))
+	}
+	return strings.Join(parts, ";")
+}
+
+func dnsPolicyStateKey(policies []dns.Policy) string {
+	parts := make([]string, 0, len(policies))
+	for _, policy := range policies {
+		parts = append(parts, policy.Domain+"="+nameServerStateKey(policy.NameServers))
+	}
+	return strings.Join(parts, ";")
 }
 
 func updateHosts(tree *trie.DomainTrie[resolver.HostValue]) {
@@ -409,6 +489,7 @@ func updateGeneral(general *config.General, logging bool) {
 	keepalive.SetKeepAliveIdle(time.Duration(general.KeepAliveIdle) * time.Second)
 	keepalive.SetKeepAliveInterval(time.Duration(general.KeepAliveInterval) * time.Second)
 	keepalive.SetDisableKeepAlive(general.DisableKeepAlive)
+	tunnel.SetLanDeviceLimit(general.LanMaxDevices, general.LanOverLimitAction)
 
 	adapter.UnifiedDelay.Store(general.UnifiedDelay)
 
@@ -461,7 +542,7 @@ func patchSelectGroup(proxies map[string]C.Proxy) {
 		}
 
 		selected, exist := mapping[name]
-		if !exist {
+		if !exist || selected == "" {
 			continue
 		}
 

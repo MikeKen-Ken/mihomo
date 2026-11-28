@@ -73,7 +73,8 @@ func getProxy(w http.ResponseWriter, r *http.Request) {
 
 func updateProxy(w http.ResponseWriter, r *http.Request) {
 	req := struct {
-		Name string `json:"name"`
+		Name  string `json:"name"`
+		Force bool   `json:"force"`
 	}{}
 	if err := render.DecodeJSON(r.Body, &req); err != nil {
 		render.Status(r, http.StatusBadRequest)
@@ -89,10 +90,23 @@ func updateProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := selector.Set(req.Name); err != nil {
-		render.Status(r, http.StatusBadRequest)
-		render.JSON(w, r, newError(fmt.Sprintf("Selector update error: %s", err.Error())))
-		return
+	if req.Name == "" {
+		if proxy.Type() == C.Selector {
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, newError("Selector requires a proxy name"))
+			return
+		}
+		selector.ForceSet("")
+	} else if err := selector.Set(req.Name); err != nil {
+		if req.Force {
+			selector.ForceSet(req.Name)
+		} else {
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, newError(fmt.Sprintf("Selector update error: %s", err.Error())))
+			return
+		}
+	} else if req.Force {
+		selector.ForceSet(req.Name)
 	}
 
 	cachefile.Cache().SetSelected(proxy.Name(), req.Name)
