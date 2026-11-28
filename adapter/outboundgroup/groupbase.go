@@ -4,57 +4,82 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/adapter/outbound"
 	"github.com/metacubex/mihomo/common/atomic"
+	"github.com/metacubex/mihomo/common/buf"
+	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 	"github.com/metacubex/mihomo/log"
+	"github.com/metacubex/mihomo/networkrecovery"
 
 	"github.com/dlclark/regexp2"
 	"golang.org/x/exp/slices"
 )
 
+const (
+	maxConnectTimesTestEventPrefix = "max-connect-times\t"
+	proxyGroupRefreshEventPrefix   = "proxy-group-refresh\t"
+)
+
+const (
+	maxConnectTimesTestCooldown = 30 * time.Second
+)
+
 type GroupBase struct {
 	*outbound.Base
-	hidden            bool
-	icon              string
-	filterRegs        []*regexp2.Regexp
-	excludeFilterRegs []*regexp2.Regexp
-	excludeTypeArray  []string
-	providers         []P.ProxyProvider
-	failedTestMux     sync.Mutex
-	failedTimes       int
-	failedTime        time.Time
-	failedTesting     atomic.Bool
-	testTimeout       int
-	maxFailedTimes    int
-	emptyFallback     C.Proxy
-	usePosition       map[string]int
+	hidden               bool
+	icon                 string
+	filterRegs           []*regexp2.Regexp
+	excludeFilterRegs    []*regexp2.Regexp
+	excludeTypeArray     []string
+	providers            []P.ProxyProvider
+	failedTestMux        sync.Mutex
+	failedTimes          int
+	failedTime           time.Time
+	failedTesting        atomic.Bool
+	connectTestMux       sync.Mutex
+	connectTimes         int
+	lastConnectTestAt    time.Time
+	connectTesting       atomic.Bool
+	TestTimeout          int
+	failureResetInterval int
+	maxFailedTimes       int
+	maxConnectTimes      int
+	emptyFallback        C.Proxy
+	usePosition          map[string]int
+	selectionPersistence manualSelectionPersistence
+	traffic              trafficEvidence
 
 	// for GetProxies
 	getProxiesMutex  sync.Mutex
 	providerVersions []uint32
 	providerProxies  []C.Proxy
+	runtimeOrder     map[string]int // guarded by getProxiesMutex
 }
 
 type GroupBaseOption struct {
-	Name           string
-	Type           C.AdapterType
-	Hidden         bool
-	Icon           string
-	Filter         string
-	ExcludeFilter  string
-	ExcludeType    string
-	TestTimeout    int
-	MaxFailedTimes int
-	EmptyFallback  C.Proxy
-	Providers      []P.ProxyProvider
-	UsePosition    map[string]int
+	Name                 string
+	Type                 C.AdapterType
+	Hidden               bool
+	Icon                 string
+	Filter               string
+	ExcludeFilter        string
+	ExcludeType          string
+	TestTimeout          int
+	FailureResetInterval int
+	MaxFailedTimes       int
+	MaxConnectTimes      int
+	EmptyFallback        C.Proxy
+	Providers            []P.ProxyProvider
+	UsePosition          map[string]int
 }
 
 func NewGroupBase(opt GroupBaseOption) *GroupBase {
@@ -80,22 +105,29 @@ func NewGroupBase(opt GroupBaseOption) *GroupBase {
 	}
 
 	gb := &GroupBase{
-		Base:              outbound.NewBase(outbound.BaseOption{Name: opt.Name, Type: opt.Type}),
-		hidden:            opt.Hidden,
-		icon:              opt.Icon,
-		filterRegs:        filterRegs,
-		excludeFilterRegs: excludeFilterRegs,
-		excludeTypeArray:  excludeTypeArray,
-		providers:         opt.Providers,
-		failedTesting:     atomic.NewBool(false),
-		testTimeout:       opt.TestTimeout,
-		maxFailedTimes:    opt.MaxFailedTimes,
-		emptyFallback:     opt.EmptyFallback,
-		usePosition:       opt.UsePosition,
+		Base:                 outbound.NewBase(outbound.BaseOption{Name: opt.Name, Type: opt.Type}),
+		hidden:               opt.Hidden,
+		icon:                 opt.Icon,
+		filterRegs:           filterRegs,
+		excludeFilterRegs:    excludeFilterRegs,
+		excludeTypeArray:     excludeTypeArray,
+		providers:            opt.Providers,
+		failedTesting:        atomic.NewBool(false),
+		connectTesting:       atomic.NewBool(false),
+		TestTimeout:          opt.TestTimeout,
+		failureResetInterval: opt.FailureResetInterval,
+		maxFailedTimes:       opt.MaxFailedTimes,
+		maxConnectTimes:      opt.MaxConnectTimes,
+		emptyFallback:        opt.EmptyFallback,
+		usePosition:          opt.UsePosition,
+		selectionPersistence: cacheManualSelectionPersistence{},
 	}
 
-	if gb.testTimeout == 0 {
-		gb.testTimeout = 5000
+	if gb.TestTimeout == 0 {
+		gb.TestTimeout = 5000
+	}
+	if gb.failureResetInterval == 0 {
+		gb.failureResetInterval = 5000
 	}
 	if gb.maxFailedTimes == 0 {
 		gb.maxFailedTimes = 5
@@ -110,6 +142,13 @@ func (gb *GroupBase) Hidden() bool {
 
 func (gb *GroupBase) Icon() string {
 	return gb.icon
+}
+
+func (gb *GroupBase) DelayTestTimeoutMs() int {
+	if gb == nil || gb.TestTimeout <= 0 {
+		return 5000
+	}
+	return gb.TestTimeout
 }
 
 func (gb *GroupBase) EmptyFallback() C.Proxy {
@@ -232,13 +271,194 @@ func (gb *GroupBase) GetProxies(touch bool) []C.Proxy {
 	}
 
 	// only cache when proxies not empty
+	gb.sortRuntimeOrder(proxies)
 	gb.providerVersions = providerVersions
 	gb.providerProxies = proxies
 
 	return proxies
 }
 
+type proxyPrecheckCallbacks struct {
+	onSuccess func()
+	onFailure func()
+}
+
+func (gb *GroupBase) onRequestAttempt(proxy C.Proxy, testURL string, expectedStatus string, fn func()) {
+	if gb.maxConnectTimes <= 0 || proxy == nil || testURL == "" {
+		return
+	}
+	if gb.failedTesting.Load() {
+		return
+	}
+	if gb.connectTesting.Load() {
+		return
+	}
+
+	adapterType := proxy.Type()
+	if adapterType == C.Direct || adapterType == C.Compatible || adapterType == C.Reject || adapterType == C.Pass || adapterType == C.RejectDrop {
+		return
+	}
+
+	shouldTest := false
+	currentConnectTimes := 0
+	gb.connectTestMux.Lock()
+	gb.connectTimes++
+	currentConnectTimes = gb.connectTimes
+	if gb.connectTimes >= gb.maxConnectTimes {
+		gb.connectTimes = 0
+		if gb.lastConnectTestAt.IsZero() || time.Since(gb.lastConnectTestAt) >= maxConnectTimesTestCooldown {
+			shouldTest = true
+		}
+	}
+	gb.connectTestMux.Unlock()
+	notifyProxyGroupRefresh(gb.Name())
+
+	if !shouldTest {
+		log.Debugln("Proxy group %s: max-connect-times count has not reached the cooldown threshold, count=%d/%d", gb.Name(), currentConnectTimes, gb.maxConnectTimes)
+		return
+	}
+	gb.connectTestMux.Lock()
+	gb.lastConnectTestAt = time.Now()
+	gb.connectTestMux.Unlock()
+
+	gb.scheduleCurrentProxyPreHealthCheck(proxy, testURL, expectedStatus, "max-connect-times", true, proxyPrecheckCallbacks{onFailure: fn})
+}
+
+func (gb *GroupBase) scheduleCurrentProxyPreHealthCheck(proxy C.Proxy, testURL, expectedStatus, trigger string, notifyUI bool, callbacks proxyPrecheckCallbacks) {
+	if callbacks.onFailure == nil {
+		return
+	}
+	if !gb.connectTesting.CompareAndSwap(false, true) {
+		return
+	}
+
+	proxyName := ""
+	if proxy != nil {
+		proxyName = proxy.Name()
+	}
+	log.Warnln("[App] %s precheck started\tgroup=%s\tproxy=%s", trigger, gb.Name(), proxyName)
+
+	go func() {
+		defer gb.connectTesting.Store(false)
+		if proxy == nil || testURL == "" {
+			callbacks.onFailure()
+			return
+		}
+
+		timeoutMs := gb.TestTimeout
+		if timeoutMs <= 0 {
+			timeoutMs = 5000
+		}
+
+		status, err := utils.NewUnsignedRanges[uint16](expectedStatus)
+		if err != nil {
+			log.Debugln("Proxy group %s: skipping %s precheck: %v", gb.Name(), trigger, err)
+			callbacks.onFailure()
+			return
+		}
+
+		started := time.Now()
+		gb.traffic.beginCheck(proxyName)
+		defer gb.traffic.endCheck()
+		runURLTest := func(url string, expected utils.IntRanges[uint16]) (uint16, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeoutMs))
+			defer cancel()
+			ctx = C.WithHealthCheckSourceName(ctx, gb.Name())
+			return proxy.URLTest(C.WithConnectivityProbe(ctx), url, expected)
+		}
+
+		log.Warnln("[App] %s check started\tgroup=%s\tproxy=%s\ttimeoutMs=%d", trigger, gb.Name(), proxy.Name(), timeoutMs)
+		if notifyUI {
+			notifyMaxConnectTimesTestTriggered(gb.Name(), proxy.Name())
+		}
+
+		delay, testErr := runURLTest(testURL, status)
+		if testErr == nil {
+			recordProbeHealth(proxy, testURL, delay, true)
+			log.Warnln("[App] %s check result\t%s\t%s\tsuccess\t%d", trigger, gb.Name(), proxy.Name(), delay)
+			recordConclusivePrecheck(trigger, proxy.Name(), delay, timeoutMs)
+			if callbacks.onSuccess != nil {
+				callbacks.onSuccess()
+			}
+			gb.resetFailedTimes()
+			return
+		}
+
+		log.Warnln("[App] %s check result\t%s\t%s\tfailed\t%v", trigger, gb.Name(), proxy.Name(), testErr)
+		log.Warnln("[App] %s retry\tgroup=%s\tproxy=%s\treason=initial check failed", trigger, gb.Name(), proxy.Name())
+
+		if gb.traffic.receivedSince(proxyName, started) {
+			networkrecovery.RecordEvent("traffic-veto", started)
+			gb.resetFailedTimes()
+			return
+		}
+		confirmationStatus, _ := utils.NewUnsignedRanges[uint16]("204")
+		retryDelay, retryErr := runURLTest(independentProbeURL(testURL), confirmationStatus)
+		if retryErr == nil {
+			log.Warnln("[App] %s check result\t%s\t%s\tsuccess\t%d", trigger, gb.Name(), proxy.Name(), retryDelay)
+			recordConclusivePrecheck(trigger, proxy.Name(), retryDelay, timeoutMs)
+			gb.resetFailedTimes()
+			return
+		}
+		if gb.traffic.receivedSince(proxyName, started) {
+			networkrecovery.RecordEvent("traffic-veto", started)
+			gb.resetFailedTimes()
+			return
+		}
+
+		log.Warnln("[App] %s check result\t%s\t%s\tfailed\t%v", trigger, gb.Name(), proxy.Name(), retryErr)
+		log.Warnln("[App] %s triggered health check\tgroup=%s\tproxy=%s\treason=retry failed", trigger, gb.Name(), proxy.Name())
+		log.Infoln("Proxy group %s current proxy %s failed %s precheck twice; triggering health check", gb.Name(), proxy.Name(), trigger)
+		recordProbeHealth(proxy, testURL, 0, false)
+		recordConclusivePrecheck(trigger, proxy.Name(), 0, timeoutMs)
+		callbacks.onFailure()
+	}()
+}
+
+func recordConclusivePrecheck(trigger, proxyName string, delay uint16, timeoutMs int) {
+	if proxyName == "" {
+		return
+	}
+	if trigger != "max-failed-times" && trigger != "max-connect-times" {
+		return
+	}
+	recordFailedTimesConnectivity(proxyName, int(delay), timeoutMs)
+}
+
+func (gb *GroupBase) resetFailedTimes() {
+	gb.failedTestMux.Lock()
+	gb.failedTimes = 0
+	gb.failedTime = time.Time{}
+	gb.failedTestMux.Unlock()
+}
+
+func (gb *GroupBase) resetConnectTimes() {
+	gb.connectTestMux.Lock()
+	gb.connectTimes = 0
+	gb.lastConnectTestAt = time.Time{}
+	gb.connectTestMux.Unlock()
+	notifyProxyGroupRefresh(gb.Name())
+}
+
+func (gb *GroupBase) ResetConnectTimes() {
+	gb.resetConnectTimes()
+}
+
+func (gb *GroupBase) ConnectTimes() int {
+	gb.connectTestMux.Lock()
+	defer gb.connectTestMux.Unlock()
+	return gb.connectTimes
+}
+
+func (gb *GroupBase) MaxConnectTimes() int {
+	return gb.maxConnectTimes
+}
+
 func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (map[string]uint16, error) {
+	defer gb.resetConnectTimes()
+
+	testCtx := C.WithHealthCheckSourceName(ctx, gb.Name())
+
 	var wg sync.WaitGroup
 	var lock sync.Mutex
 	mp := map[string]uint16{}
@@ -247,7 +467,7 @@ func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus uti
 		proxy := proxy
 		wg.Add(1)
 		go func() {
-			delay, err := proxy.URLTest(ctx, url, expectedStatus)
+			delay, err := proxy.URLTest(testCtx, url, expectedStatus)
 			if err == nil {
 				lock.Lock()
 				mp[proxy.Name()] = delay
@@ -266,7 +486,18 @@ func (gb *GroupBase) URLTest(ctx context.Context, url string, expectedStatus uti
 	}
 }
 
-func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func()) {
+func (gb *GroupBase) shouldSuppressDialFailureStats(ctx context.Context) bool {
+	if gb.failedTesting.Load() {
+		return true
+	}
+	return C.SuppressGroupOutboundFailureStats(ctx)
+}
+
+func (gb *GroupBase) onDialFailed(ctx context.Context, adapterType C.AdapterType, err error, proxy C.Proxy, testURL, expectedStatus string, fn func()) {
+	gb.onDialFailedWithCallbacks(ctx, adapterType, err, proxy, testURL, expectedStatus, proxyPrecheckCallbacks{onFailure: fn})
+}
+
+func (gb *GroupBase) onDialFailedWithCallbacks(ctx context.Context, adapterType C.AdapterType, err error, proxy C.Proxy, testURL, expectedStatus string, callbacks proxyPrecheckCallbacks) {
 	if adapterType == C.Direct || adapterType == C.Compatible || adapterType == C.Reject || adapterType == C.Pass || adapterType == C.RejectDrop {
 		return
 	}
@@ -275,57 +506,222 @@ func (gb *GroupBase) onDialFailed(adapterType C.AdapterType, err error, fn func(
 		return
 	}
 
-	go func() {
-		if strings.Contains(err.Error(), "connection refused") {
-			fn()
-			return
-		}
-
-		gb.failedTestMux.Lock()
-		defer gb.failedTestMux.Unlock()
-
-		gb.failedTimes++
-		if gb.failedTimes == 1 {
-			log.Debugln("ProxyGroup: %s first failed", gb.Name())
-			gb.failedTime = time.Now()
-		} else {
-			if time.Since(gb.failedTime) > time.Duration(gb.testTimeout)*time.Millisecond {
-				gb.failedTimes = 0
-				return
-			}
-
-			log.Debugln("ProxyGroup: %s failed count: %d", gb.Name(), gb.failedTimes)
-			if gb.failedTimes >= gb.maxFailedTimes {
-				log.Warnln("because %s failed multiple times, activate health check", gb.Name())
-				fn()
-			}
-		}
-	}()
+	gb.handleDialFailed(ctx, err, proxy, testURL, expectedStatus, callbacks)
 }
 
-func (gb *GroupBase) healthCheck() {
-	if gb.failedTesting.Load() {
+func (gb *GroupBase) handleDialFailed(ctx context.Context, err error, proxy C.Proxy, testURL, expectedStatus string, callbacks proxyPrecheckCallbacks) {
+	if errors.Is(err, context.Canceled) || ctx.Err() == context.Canceled {
+		return
+	}
+	if gb.shouldSuppressDialFailureStats(ctx) {
 		return
 	}
 
-	gb.failedTesting.Store(true)
-	wg := sync.WaitGroup{}
-	for _, proxyProvider := range gb.providers {
-		wg.Add(1)
-		proxyProvider := proxyProvider
-		go func() {
-			defer wg.Done()
-			proxyProvider.HealthCheck()
-		}()
+	shouldPreCheck := false
+	if strings.Contains(err.Error(), "connection refused") {
+		log.Warnln("[App] max-failed-times threshold reached\tgroup=%s\treason=connection refused", gb.Name())
+		shouldPreCheck = true
+	} else {
+		gb.failedTestMux.Lock()
+		gb.failedTimes++
+		if gb.failedTimes == 1 {
+			log.Debugln("Proxy group %s first failure", gb.Name())
+			gb.failedTime = time.Now()
+		} else {
+			if time.Since(gb.failedTime) > time.Duration(gb.failureResetInterval)*time.Millisecond {
+				log.Warnln("[App] max-failed-times reset\tgroup=%s\treason=window expired\tcount=%d", gb.Name(), gb.failedTimes)
+				gb.failedTimes = 1
+				gb.failedTime = time.Now()
+			} else {
+				log.Debugln("Proxy group %s failure count: %d", gb.Name(), gb.failedTimes)
+			}
+		}
+		log.Warnln("[App] max-failed-times updated\tgroup=%s\tcount=%d\tthreshold=%d\twindowMs=%d", gb.Name(), gb.failedTimes, gb.maxFailedTimes, gb.failureResetInterval)
+		shouldPreCheck = gb.failedTimes == gb.maxFailedTimes
+		gb.failedTestMux.Unlock()
 	}
 
-	wg.Wait()
-	gb.failedTesting.Store(false)
-	gb.failedTimes = 0
+	if shouldPreCheck {
+		gb.scheduleCurrentProxyPreHealthCheck(proxy, testURL, expectedStatus, "max-failed-times", false, callbacks)
+	}
+}
+
+func (gb *GroupBase) healthCheck(testURL string, expectedStatusText string) {
+	gb.healthCheckCandidate(testURL, expectedStatusText)
+}
+
+func (gb *GroupBase) healthCheckCandidate(testURL string, expectedStatusText string) (candidate C.Proxy, conclusive bool) {
+	if !gb.failedTesting.CompareAndSwap(false, true) {
+		return nil, false
+	}
+	defer func() {
+		gb.failedTesting.Store(false)
+	}()
+
+	if gb.Type() == C.Fallback {
+		log.Infoln("Fallback group %s triggered a health check", gb.Name())
+		notifyHealthCheckTriggered(gb.Name())
+	}
+
+	expectedStatus, err := utils.NewUnsignedRanges[uint16](expectedStatusText)
+	if err != nil {
+		log.Warnln("Proxy group %s failed to parse expected-status: %s", gb.Name(), err.Error())
+		expectedStatus = nil
+	}
+	targetNames := gb.healthCheckTargetNames()
+	started := time.Now()
+	var ready C.Proxy
+
+	for _, proxyProvider := range gb.providers {
+		if testURL == "" {
+			proxyProvider.HealthCheck()
+			continue
+		}
+		if proxyProvider.HealthCheckURLUntilHealthy(testURL, expectedStatus, targetNames) {
+			ready = gb.verifiedRecoveryCandidate(testURL, started)
+			log.Infoln("Proxy group %s found a healthy proxy; ending health check early", gb.Name())
+			break
+		}
+	}
+
+	gb.resetFailedTimes()
+	gb.resetConnectTimes()
+	if ready == nil {
+		networkrecovery.RecordEvent("backup-unavailable", started)
+	} else {
+		networkrecovery.RecordEvent("backup-verified", started)
+	}
+	return ready, true
+}
+
+func (gb *GroupBase) healthCheckTargetNames() map[string]struct{} {
+	proxies := gb.GetProxies(false)
+	names := make(map[string]struct{}, len(proxies))
+	for _, proxy := range proxies {
+		names[proxy.Name()] = struct{}{}
+	}
+	return names
 }
 
 func (gb *GroupBase) onDialSuccess() {
 	if !gb.failedTesting.Load() {
-		gb.failedTimes = 0
+		gb.resetFailedTimes()
 	}
 }
+
+type postConnectFailureConn struct {
+	C.Conn
+	callback       func(error)
+	onRead         func()
+	once           sync.Once
+	writeMux       sync.Mutex
+	written        bool
+	skipFirstWrite bool
+}
+
+func (c *postConnectFailureConn) notify(err error) {
+	if !isPostConnectFailure(err) {
+		return
+	}
+	c.once.Do(func() {
+		c.callback(err)
+	})
+}
+
+func (c *postConnectFailureConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n > 0 && c.onRead != nil {
+		c.onRead()
+	}
+	c.notify(err)
+	return n, err
+}
+
+func (c *postConnectFailureConn) ReadBuffer(buffer *buf.Buffer) error {
+	before := buffer.Len()
+	err := c.Conn.ReadBuffer(buffer)
+	if buffer.Len() > before && c.onRead != nil {
+		c.onRead()
+	}
+	c.notify(err)
+	return err
+}
+
+func (c *postConnectFailureConn) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	if c.shouldNotifyWrite() {
+		c.notify(err)
+	}
+	return n, err
+}
+
+func (c *postConnectFailureConn) WriteBuffer(buffer *buf.Buffer) error {
+	err := c.Conn.WriteBuffer(buffer)
+	if c.shouldNotifyWrite() {
+		c.notify(err)
+	}
+	return err
+}
+
+func (c *postConnectFailureConn) Upstream() any {
+	return c.Conn
+}
+
+func (c *postConnectFailureConn) ReaderReplaceable() bool {
+	return false
+}
+
+func (c *postConnectFailureConn) WriterReplaceable() bool {
+	return false
+}
+
+func (c *postConnectFailureConn) shouldNotifyWrite() bool {
+	c.writeMux.Lock()
+	defer c.writeMux.Unlock()
+
+	if !c.written {
+		c.written = true
+		return !c.skipFirstWrite
+	}
+	return true
+}
+
+func (gb *GroupBase) observePostConnectFailure(ctx context.Context, c C.Conn, adapterType C.AdapterType, proxy C.Proxy, testURL, expectedStatus string, skipFirstWrite bool, fn func()) C.Conn {
+	return gb.observePostConnectFailureWithCallbacks(ctx, c, adapterType, proxy, testURL, expectedStatus, skipFirstWrite, proxyPrecheckCallbacks{onFailure: fn})
+}
+
+func (gb *GroupBase) observePostConnectFailureWithCallbacks(ctx context.Context, c C.Conn, adapterType C.AdapterType, proxy C.Proxy, testURL, expectedStatus string, skipFirstWrite bool, callbacks proxyPrecheckCallbacks) C.Conn {
+	var onRead func()
+	if proxy != nil && !C.SuppressGroupOutboundFailureStats(ctx) {
+		name := proxy.Name()
+		onRead = func() { gb.traffic.record(name) }
+	}
+	return &postConnectFailureConn{
+		Conn:           c,
+		onRead:         onRead,
+		skipFirstWrite: skipFirstWrite,
+		callback: func(err error) {
+			gb.onDialFailedWithCallbacks(ctx, adapterType, err, proxy, testURL, expectedStatus, callbacks)
+		},
+	}
+}
+
+func isPostConnectFailure(err error) bool {
+	if err == nil || errors.Is(err, io.EOF) {
+		return false
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "i/o timeout") ||
+		strings.Contains(msg, "forcibly closed by the remote host") ||
+		strings.Contains(msg, "connection aborted")
+}
+
+var _ N.ExtendedConn = (*postConnectFailureConn)(nil)

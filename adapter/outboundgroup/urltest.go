@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/common/callback"
@@ -13,6 +14,7 @@ import (
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
+	"github.com/metacubex/mihomo/networkrecovery"
 )
 
 const unmeasuredPickHold = time.Second
@@ -23,13 +25,15 @@ type URLTestOption struct {
 
 type URLTest struct {
 	*GroupBase
-	selected       string
+	selection      manualSelectionState
 	testUrl        string
 	expectedStatus string
 	tolerance      uint16
 	disableUDP     bool
+	fastNodeMux    sync.Mutex
 	fastNode       C.Proxy
 	fastSingle     *singledo.Single[C.Proxy]
+	recoveryHold   fallbackStability
 }
 
 func (u *URLTest) Now() string {
@@ -52,28 +56,51 @@ func (u *URLTest) Set(name string) error {
 }
 
 func (u *URLTest) ForceSet(name string) {
-	u.selected = name
+	u.selection.set(name)
 	u.fastSingle.Reset()
+}
+
+// ClearManualSelection releases the pin and drops the cached fast node so
+// the next Dial uses live auto-select instead of the previously pinned proxy.
+func (u *URLTest) ClearManualSelection() {
+	cleared := u.selection.clear()
+	u.fastNodeMux.Lock()
+	u.fastNode = nil
+	u.fastNodeMux.Unlock()
+	u.fastSingle.Reset()
+	if cleared && u.GroupBase != nil {
+		u.onManualSelectionCleared()
+	}
 }
 
 // DialContext implements C.ProxyAdapter
 func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
-	proxy := u.fast(true)
+	proxy, selection := u.fastWithSelection(true)
+	callbacks := proxyPrecheckCallbacks{
+		// Keep the manual selection when its diagnostic probe succeeds.
+		onFailure: func() {
+			u.healthCheckForSelection(selection)
+		},
+	}
 	c, err = proxy.DialContext(ctx, metadata)
+	needHandshake := err == nil && N.NeedHandshake(c)
 	if err == nil {
 		c.AppendToChains(u)
 	} else {
-		u.onDialFailed(proxy.Type(), err, u.healthCheck)
+		u.onDialFailedWithCallbacks(ctx, proxy.Type(), err, proxy, u.testUrl, u.expectedStatus, callbacks)
 	}
 
-	if N.NeedHandshake(c) {
+	if needHandshake {
 		c = callback.NewFirstWriteCallBackConn(c, func(err error) {
 			if err == nil {
 				u.onDialSuccess()
 			} else {
-				u.onDialFailed(proxy.Type(), err, u.healthCheck)
+				u.onDialFailedWithCallbacks(ctx, proxy.Type(), err, proxy, u.testUrl, u.expectedStatus, callbacks)
 			}
 		})
+	}
+	if err == nil {
+		c = u.observePostConnectFailureWithCallbacks(ctx, c, proxy.Type(), proxy, u.testUrl, u.expectedStatus, needHandshake, callbacks)
 	}
 
 	return c, err
@@ -81,15 +108,27 @@ func (u *URLTest) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Co
 
 // ListenPacketContext implements C.ProxyAdapter
 func (u *URLTest) ListenPacketContext(ctx context.Context, metadata *C.Metadata) (C.PacketConn, error) {
-	proxy := u.fast(true)
+	proxy, selection := u.fastWithSelection(true)
 	pc, err := proxy.ListenPacketContext(ctx, metadata)
 	if err == nil {
 		pc.AppendToChains(u)
+		pc = u.observePacketTraffic(ctx, pc, proxy)
 	} else {
-		u.onDialFailed(proxy.Type(), err, u.healthCheck)
+		u.onDialFailedWithCallbacks(ctx, proxy.Type(), err, proxy, u.testUrl, u.expectedStatus, proxyPrecheckCallbacks{
+			onFailure: func() {
+				u.healthCheckForSelection(selection)
+			},
+		})
 	}
 
 	return pc, err
+}
+
+func (u *URLTest) CountRequest(metadata *C.Metadata) {
+	proxy, selection := u.fastWithSelection(true)
+	u.onRequestAttempt(proxy, u.testUrl, u.expectedStatus, func() {
+		u.healthCheckForSelection(selection)
+	})
 }
 
 // Unwrap implements C.ProxyAdapter
@@ -98,33 +137,75 @@ func (u *URLTest) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 }
 
 func (u *URLTest) healthCheck() {
+	u.healthCheckForSelection(u.selection.snapshot())
+}
+
+// healthCheckForSelection never releases the user's pin. Only an explicit
+// ClearManualSelection call from the user may do that.
+func (u *URLTest) healthCheckForSelection(selection manualSelectionSnapshot) {
+	started, previous := time.Now(), selection.name
+	u.fastNodeMux.Lock()
+	if previous == "" && u.fastNode != nil {
+		previous = u.fastNode.Name()
+	}
+	u.fastNodeMux.Unlock()
+	candidate, _ := u.GroupBase.healthCheckCandidate(u.testUrl, u.expectedStatus)
+	if candidate == nil {
+		return
+	}
+	u.recoveryHold.remember(candidate.Name())
 	u.fastSingle.Reset()
-	u.GroupBase.healthCheck()
-	u.fastSingle.Reset()
+	if previous != "" && candidate.Name() != previous && u.selection.snapshot().name == "" {
+		networkrecovery.RecordEvent("switch", started)
+	}
+}
+
+// NowIsManual implements NowIsManualAble.
+func (u *URLTest) NowIsManual() bool {
+	return u.selection.snapshot().name != ""
+}
+
+func (u *URLTest) fastWithSelection(touch bool) (C.Proxy, manualSelectionSnapshot) {
+	proxy := u.fast(touch)
+	return proxy, u.selection.snapshot()
 }
 
 func (u *URLTest) fast(touch bool) C.Proxy {
-	// A rebuilt group starts on its first member, which subscriptions often fill
-	// with a traffic notice; held for the whole cache window, that pick outlasts
-	// the first health check and fails every connection meanwhile. The hold keeps
-	// a group with no usable member from walking them all on every connection.
+	proxies := u.GetProxies(touch)
+	if first, ordered := u.firstRuntimeOrderedHealthy(proxies, u.testUrl); ordered {
+		selection := u.selection.snapshot()
+		for _, proxy := range proxies {
+			if proxy.Name() == selection.name {
+				return proxy
+			}
+		}
+		if first != nil {
+			return first
+		}
+	}
 	u.fastSingle.ForgetAfter(unmeasuredPickHold, func(pick C.Proxy) bool {
 		return pick.LastDelayForTestUrl(u.testUrl) == math.MaxUint16
 	})
 	elm, _, shared := u.fastSingle.Do(func() (C.Proxy, error) {
+		u.fastNodeMux.Lock()
 		proxies := u.GetProxies(touch)
-		if u.selected != "" {
+		selection := u.selection.snapshot()
+		if selection.name != "" {
 			for _, proxy := range proxies {
-				if !proxy.AliveForTestUrl(u.testUrl) {
-					continue
-				}
-				if proxy.Name() == u.selected {
+				if proxy.Name() == selection.name {
 					u.fastNode = proxy
+					u.fastNodeMux.Unlock()
 					return proxy, nil
 				}
 			}
+			u.fastNode = nil
 		}
 
+		if recovered := u.recoveryHold.current(proxies, u.testUrl, u.TestTimeout); recovered != nil {
+			u.fastNode = recovered
+			u.fastNodeMux.Unlock()
+			return recovered, nil
+		}
 		fast := proxies[0]
 		minDelay := fast.LastDelayForTestUrl(u.testUrl)
 		fastNotExist := true
@@ -149,7 +230,9 @@ func (u *URLTest) fast(touch bool) C.Proxy {
 		if u.fastNode == nil || fastNotExist || !u.fastNode.AliveForTestUrl(u.testUrl) || u.fastNode.LastDelayForTestUrl(u.testUrl) > fast.LastDelayForTestUrl(u.testUrl)+u.tolerance {
 			u.fastNode = fast
 		}
-		return u.fastNode, nil
+		result := u.fastNode
+		u.fastNodeMux.Unlock()
+		return result, nil
 	})
 	if shared && touch { // a shared fastSingle.Do() may cause providers untouched, so we touch them again
 		u.Touch()
@@ -178,15 +261,17 @@ func (u *URLTest) MarshalJSON() ([]byte, error) {
 		all = append(all, proxy.Name())
 	}
 	return json.Marshal(map[string]any{
-		"type":           u.Type().String(),
-		"now":            u.Now(),
-		"all":            all,
-		"testUrl":        u.testUrl,
-		"expectedStatus": u.expectedStatus,
-		"fixed":          u.selected,
-		"hidden":         u.Hidden(),
-		"icon":           u.Icon(),
-		"emptyFallback":  u.EmptyFallback().Name(),
+		"type":            u.Type().String(),
+		"now":             u.Now(),
+		"all":             all,
+		"testUrl":         u.testUrl,
+		"expectedStatus":  u.expectedStatus,
+		"fixed":           u.selection.snapshot().name,
+		"hidden":          u.Hidden(),
+		"icon":            u.Icon(),
+		"emptyFallback":   u.EmptyFallback().Name(),
+		"connectTimes":    u.ConnectTimes(),
+		"maxConnectTimes": u.MaxConnectTimes(),
 	})
 }
 
@@ -196,6 +281,10 @@ func (u *URLTest) Providers() []P.ProxyProvider {
 
 func (u *URLTest) Proxies() []C.Proxy {
 	return u.GetProxies(false)
+}
+
+func (u *URLTest) DelayTestSpec() (string, string) {
+	return u.testUrl, u.expectedStatus
 }
 
 func (u *URLTest) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (map[string]uint16, error) {
@@ -208,18 +297,20 @@ func NewURLTest(option GroupCommonOption, urlTestOption URLTestOption, emptyFall
 	}
 	urlTest := &URLTest{
 		GroupBase: NewGroupBase(GroupBaseOption{
-			Name:           option.Name,
-			Type:           C.URLTest,
-			Hidden:         option.Hidden,
-			Icon:           option.Icon,
-			Filter:         option.Filter,
-			ExcludeFilter:  option.ExcludeFilter,
-			ExcludeType:    option.ExcludeType,
-			TestTimeout:    option.TestTimeout,
-			MaxFailedTimes: option.MaxFailedTimes,
-			EmptyFallback:  emptyFallback,
-			Providers:      providers,
-			UsePosition:    option.UsePosition,
+			Name:                 option.Name,
+			Type:                 C.URLTest,
+			Hidden:               option.Hidden,
+			Icon:                 option.Icon,
+			Filter:               option.Filter,
+			ExcludeFilter:        option.ExcludeFilter,
+			ExcludeType:          option.ExcludeType,
+			TestTimeout:          option.TestTimeout,
+			FailureResetInterval: option.FailureResetInterval,
+			MaxFailedTimes:       option.MaxFailedTimes,
+			MaxConnectTimes:      option.MaxConnectTimes,
+			EmptyFallback:        emptyFallback,
+			Providers:            providers,
+			UsePosition:          option.UsePosition,
 		}),
 		fastSingle:     singledo.NewSingle[C.Proxy](time.Second * 10),
 		disableUDP:     option.DisableUDP,

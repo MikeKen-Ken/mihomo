@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
+	"time"
 
+	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 )
@@ -16,8 +19,14 @@ type SelectorOption struct {
 type Selector struct {
 	*GroupBase
 	disableUDP bool
-	selected   string
-	testUrl    string
+
+	selectionMu     sync.RWMutex
+	selected        string
+	manualSelected  bool   // true only after user or persist Set(); cleared by ClearManualSelection/health/stop
+	defaultSelected string // implicit default, latched to the first resolved member; survives member reordering
+	testUrl         string
+	expectedStatus  string
+	selectedTimeout int // ms, for manual-selected node delay test; 0 = skip
 }
 
 // DialContext implements C.ProxyAdapter
@@ -36,6 +45,10 @@ func (s *Selector) ListenPacketContext(ctx context.Context, metadata *C.Metadata
 		pc.AppendToChains(s)
 	}
 	return pc, err
+}
+
+func (s *Selector) CountRequest(metadata *C.Metadata) {
+	s.onRequestAttempt(s.selectedProxy(false), s.testUrl, s.expectedStatus, func() {})
 }
 
 // SupportUDP implements C.ProxyAdapter
@@ -66,33 +79,78 @@ func (s *Selector) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(map[string]any{
-		"type":          s.Type().String(),
-		"now":           s.Now(),
-		"all":           all,
-		"testUrl":       url,
-		"hidden":        s.Hidden(),
-		"icon":          s.Icon(),
-		"emptyFallback": s.EmptyFallback().Name(),
+		"type":            s.Type().String(),
+		"now":             s.Now(),
+		"all":             all,
+		"testUrl":         url,
+		"hidden":          s.Hidden(),
+		"icon":            s.Icon(),
+		"emptyFallback":   s.EmptyFallback().Name(),
+		"connectTimes":    s.ConnectTimes(),
+		"maxConnectTimes": s.MaxConnectTimes(),
 	})
 }
 
 func (s *Selector) Now() string {
-	return s.selectedProxy(false).Name()
+	proxy := s.selectedProxy(false)
+	if proxy == nil {
+		return ""
+	}
+	return proxy.Name()
 }
 
 func (s *Selector) Set(name string) error {
+	var selectedProxy C.Proxy
 	for _, proxy := range s.GetProxies(false) {
 		if proxy.Name() == name {
-			s.selected = name
-			return nil
+			selectedProxy = proxy
+			break
 		}
 	}
+	if selectedProxy == nil {
+		return errors.New("proxy not exist")
+	}
 
-	return errors.New("proxy not exist")
+	s.selectionMu.Lock()
+	s.selected = name
+	s.manualSelected = true
+	s.selectionMu.Unlock()
+
+	if s.selectedTimeout > 0 && s.testUrl != "" {
+		go func() {
+			defer s.resetConnectTimes()
+
+			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(s.selectedTimeout))
+			defer cancel()
+			ctx = C.WithHealthCheckSourceName(ctx, s.Name())
+			expectedStatus, _ := utils.NewUnsignedRanges[uint16](s.expectedStatus)
+			_, _ = selectedProxy.URLTest(ctx, s.testUrl, expectedStatus)
+		}()
+	}
+
+	return nil
 }
 
 func (s *Selector) ForceSet(name string) {
+	s.selectionMu.Lock()
 	s.selected = name
+	s.manualSelected = name != ""
+	s.selectionMu.Unlock()
+}
+
+// NowIsManual implements NowIsManualAble.
+func (s *Selector) NowIsManual() bool {
+	s.selectionMu.RLock()
+	defer s.selectionMu.RUnlock()
+	return s.manualSelected
+}
+
+// ClearManualSelection drops the manual pin. The group then uses its first member again.
+func (s *Selector) ClearManualSelection() {
+	s.selectionMu.Lock()
+	s.manualSelected = false
+	s.selected = ""
+	s.selectionMu.Unlock()
 }
 
 // Unwrap implements C.ProxyAdapter
@@ -102,13 +160,45 @@ func (s *Selector) Unwrap(metadata *C.Metadata, touch bool) C.Proxy {
 
 func (s *Selector) selectedProxy(touch bool) C.Proxy {
 	proxies := s.GetProxies(touch)
-	for _, proxy := range proxies {
-		if proxy.Name() == s.selected {
-			return proxy
+	if len(proxies) == 0 {
+		return nil
+	}
+
+	s.selectionMu.RLock()
+	selected := s.selected
+	manual := s.manualSelected
+	defaultSelected := s.defaultSelected
+	s.selectionMu.RUnlock()
+
+	if manual && selected != "" {
+		for _, proxy := range proxies {
+			if proxy.Name() == selected {
+				return proxy
+			}
 		}
 	}
 
+	if defaultSelected != "" {
+		for _, proxy := range proxies {
+			if proxy.Name() == defaultSelected {
+				return proxy
+			}
+		}
+	}
+
+	s.latchDefault(proxies[0].Name())
 	return proxies[0]
+}
+
+func (s *Selector) latchDefault(name string) {
+	if name == "" {
+		return
+	}
+	s.selectionMu.Lock()
+	if s.defaultSelected == "" {
+		s.defaultSelected = name
+	}
+	s.selectionMu.Unlock()
 }
 
 func (s *Selector) Providers() []P.ProxyProvider {
@@ -119,24 +209,41 @@ func (s *Selector) Proxies() []C.Proxy {
 	return s.GetProxies(false)
 }
 
+func (s *Selector) DelayTestSpec() (string, string) {
+	return s.testUrl, s.expectedStatus
+}
+
 func NewSelector(option GroupCommonOption, selectorOption SelectorOption, emptyFallback C.Proxy, providers []P.ProxyProvider) (*Selector, error) {
+	selectedTimeout := option.SelectedTimeout
+	if selectedTimeout <= 0 {
+		selectedTimeout = option.TestTimeout
+	}
+	if selectedTimeout <= 0 {
+		selectedTimeout = 5000
+	}
+
 	return &Selector{
 		GroupBase: NewGroupBase(GroupBaseOption{
-			Name:           option.Name,
-			Type:           C.Selector,
-			Hidden:         option.Hidden,
-			Icon:           option.Icon,
-			Filter:         option.Filter,
-			ExcludeFilter:  option.ExcludeFilter,
-			ExcludeType:    option.ExcludeType,
-			TestTimeout:    option.TestTimeout,
-			MaxFailedTimes: option.MaxFailedTimes,
-			EmptyFallback:  emptyFallback,
-			Providers:      providers,
-			UsePosition:    option.UsePosition,
+			Name:                 option.Name,
+			Type:                 C.Selector,
+			Hidden:               option.Hidden,
+			Icon:                 option.Icon,
+			Filter:               option.Filter,
+			ExcludeFilter:        option.ExcludeFilter,
+			ExcludeType:          option.ExcludeType,
+			TestTimeout:          option.TestTimeout,
+			FailureResetInterval: option.FailureResetInterval,
+			MaxFailedTimes:       option.MaxFailedTimes,
+			MaxConnectTimes:      option.MaxConnectTimes,
+			EmptyFallback:        emptyFallback,
+			Providers:            providers,
+			UsePosition:          option.UsePosition,
 		}),
-		selected:   selectorOption.DefaultSelected,
-		disableUDP: option.DisableUDP,
-		testUrl:    option.URL,
+		selected:        selectorOption.DefaultSelected,
+		manualSelected:  selectorOption.DefaultSelected != "",
+		disableUDP:      option.DisableUDP,
+		testUrl:         option.URL,
+		expectedStatus:  option.ExpectedStatus,
+		selectedTimeout: selectedTimeout,
 	}, nil
 }

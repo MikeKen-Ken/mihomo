@@ -27,11 +27,14 @@ type GroupCommonOption struct {
 	Type                string   `group:"type"`
 	Proxies             []string `group:"proxies,omitempty"`
 	Use                 []string `group:"use,omitempty"`
-	URL                 string   `group:"url,omitempty"`
-	Interval            int      `group:"interval,omitempty"`
-	TestTimeout         int      `group:"timeout,omitempty"`
-	MaxFailedTimes      int      `group:"max-failed-times,omitempty"`
-	EmptyFallback       string   `group:"empty-fallback,omitempty"`
+	URL                  string   `group:"url,omitempty"`
+	Interval             int      `group:"interval,omitempty"`
+	TestTimeout          int      `group:"timeout,omitempty"`
+	SelectedTimeout      int      `group:"selected-timeout,omitempty"`
+	FailureResetInterval int      `group:"failure-reset-interval,omitempty"`
+	MaxFailedTimes       int      `group:"max-failed-times,omitempty"`
+	MaxConnectTimes      int      `group:"max-connect-times,omitempty"`
+	EmptyFallback        string   `group:"empty-fallback,omitempty"`
 	Lazy                bool     `group:"lazy,omitempty"`
 	DisableUDP          bool     `group:"disable-udp,omitempty"`
 	Filter              string   `group:"filter,omitempty"`
@@ -175,7 +178,7 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide
 			}
 		}
 
-		hc := provider.NewHealthCheck(ps, groupOption.URL, uint(groupOption.TestTimeout), uint(groupOption.Interval), groupOption.Lazy, expectedStatus)
+		hc := provider.NewNamedHealthCheck(ps, groupName, groupOption.URL, uint(groupOption.TestTimeout), uint(groupOption.Interval), groupOption.Lazy, expectedStatus)
 
 		pd, err := provider.NewCompatibleProvider(groupName, ps, hc)
 		if err != nil {

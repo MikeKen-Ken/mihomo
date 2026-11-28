@@ -67,6 +67,77 @@ func (m *Manager) Range(f func(c Tracker) bool) {
 	})
 }
 
+func (m *Manager) CloseConnectionsUsingProxyGroup(group string) int {
+	if group == "" {
+		return 0
+	}
+	var toClose []string
+	m.Range(func(c Tracker) bool {
+		info := c.Info()
+		if info == nil {
+			return true
+		}
+		for _, name := range info.Chain {
+			if name == group {
+				toClose = append(toClose, c.ID())
+				break
+			}
+		}
+		return true
+	})
+	for _, id := range toClose {
+		if c := m.Get(id); c != nil {
+			_ = c.Close()
+		}
+	}
+	return len(toClose)
+}
+
+func (m *Manager) CloseConnectionsUsingProxyGroupsAndProxy(groups []string, proxy string) int {
+	if len(groups) == 0 || proxy == "" {
+		return 0
+	}
+
+	groupSet := map[string]struct{}{}
+	for _, group := range groups {
+		if group != "" {
+			groupSet[group] = struct{}{}
+		}
+	}
+	if len(groupSet) == 0 {
+		return 0
+	}
+
+	var toClose []string
+	m.Range(func(c Tracker) bool {
+		info := c.Info()
+		if info == nil {
+			return true
+		}
+		hasProxy := false
+		hasGroup := false
+		for _, name := range info.Chain {
+			if name == proxy {
+				hasProxy = true
+			}
+			if _, ok := groupSet[name]; ok {
+				hasGroup = true
+			}
+			if hasProxy && hasGroup {
+				toClose = append(toClose, c.ID())
+				break
+			}
+		}
+		return true
+	})
+	for _, id := range toClose {
+		if c := m.Get(id); c != nil {
+			_ = c.Close()
+		}
+	}
+	return len(toClose)
+}
+
 func (m *Manager) PushUploaded(direct bool, size int64) {
 	if !direct {
 		m.proxyUploadTemp.Add(size)

@@ -18,7 +18,7 @@ func TestRuntimeOrderUsesFirstHealthySharedMember(t *testing.T) {
 				ForceSet(string)
 				ReorderCachedProxies([]string)
 			}
-			for range 2 {
+			for i := 0; i < 2; i++ {
 				if kind == "fallback" {
 					groups = append(groups, newTestFallback(1, a, b))
 				} else {

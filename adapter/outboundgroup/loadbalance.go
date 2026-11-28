@@ -122,21 +122,25 @@ func jumpHash(key uint64, buckets int32) int32 {
 func (lb *LoadBalance) DialContext(ctx context.Context, metadata *C.Metadata) (c C.Conn, err error) {
 	proxy := lb.Unwrap(metadata, true)
 	c, err = proxy.DialContext(ctx, metadata)
+	needHandshake := err == nil && N.NeedHandshake(c)
 
 	if err == nil {
 		c.AppendToChains(lb)
 	} else {
-		lb.onDialFailed(proxy.Type(), err, lb.healthCheck)
+		lb.onDialFailed(ctx, proxy.Type(), err, proxy, lb.testUrl, lb.expectedStatus, lb.healthCheck)
 	}
 
-	if N.NeedHandshake(c) {
+	if needHandshake {
 		c = callback.NewFirstWriteCallBackConn(c, func(err error) {
 			if err == nil {
 				lb.onDialSuccess()
 			} else {
-				lb.onDialFailed(proxy.Type(), err, lb.healthCheck)
+				lb.onDialFailed(ctx, proxy.Type(), err, proxy, lb.testUrl, lb.expectedStatus, lb.healthCheck)
 			}
 		})
+	}
+	if err == nil {
+		c = lb.observePostConnectFailure(ctx, c, proxy.Type(), proxy, lb.testUrl, lb.expectedStatus, needHandshake, lb.healthCheck)
 	}
 
 	return
@@ -151,7 +155,19 @@ func (lb *LoadBalance) ListenPacketContext(ctx context.Context, metadata *C.Meta
 	}()
 
 	proxy := lb.Unwrap(metadata, true)
-	return proxy.ListenPacketContext(ctx, metadata)
+	pc, err = proxy.ListenPacketContext(ctx, metadata)
+	if err == nil {
+		pc = lb.observePacketTraffic(ctx, pc, proxy)
+	}
+	return pc, err
+}
+
+func (lb *LoadBalance) CountRequest(metadata *C.Metadata) {
+	lb.onRequestAttempt(lb.Unwrap(metadata, false), lb.testUrl, lb.expectedStatus, lb.healthCheck)
+}
+
+func (lb *LoadBalance) healthCheck() {
+	lb.GroupBase.healthCheck(lb.testUrl, lb.expectedStatus)
 }
 
 // SupportUDP implements C.ProxyAdapter
@@ -263,14 +279,20 @@ func (lb *LoadBalance) MarshalJSON() ([]byte, error) {
 		all = append(all, proxy.Name())
 	}
 	return json.Marshal(map[string]any{
-		"type":           lb.Type().String(),
-		"all":            all,
-		"testUrl":        lb.testUrl,
-		"expectedStatus": lb.expectedStatus,
-		"hidden":         lb.Hidden(),
-		"icon":           lb.Icon(),
-		"emptyFallback":  lb.EmptyFallback().Name(),
+		"type":            lb.Type().String(),
+		"all":             all,
+		"testUrl":         lb.testUrl,
+		"expectedStatus":  lb.expectedStatus,
+		"hidden":          lb.Hidden(),
+		"icon":            lb.Icon(),
+		"emptyFallback":   lb.EmptyFallback().Name(),
+		"connectTimes":    lb.ConnectTimes(),
+		"maxConnectTimes": lb.MaxConnectTimes(),
 	})
+}
+
+func (lb *LoadBalance) DelayTestSpec() (string, string) {
+	return lb.testUrl, lb.expectedStatus
 }
 
 func (lb *LoadBalance) Providers() []P.ProxyProvider {
@@ -308,18 +330,20 @@ func NewLoadBalance(option GroupCommonOption, loadBalanceOption LoadBalanceOptio
 	}
 	return &LoadBalance{
 		GroupBase: NewGroupBase(GroupBaseOption{
-			Name:           option.Name,
-			Type:           C.LoadBalance,
-			Hidden:         option.Hidden,
-			Icon:           option.Icon,
-			Filter:         option.Filter,
-			ExcludeFilter:  option.ExcludeFilter,
-			ExcludeType:    option.ExcludeType,
-			TestTimeout:    option.TestTimeout,
-			MaxFailedTimes: option.MaxFailedTimes,
-			EmptyFallback:  emptyFallback,
-			Providers:      providers,
-			UsePosition:    option.UsePosition,
+			Name:                 option.Name,
+			Type:                 C.LoadBalance,
+			Hidden:               option.Hidden,
+			Icon:                 option.Icon,
+			Filter:               option.Filter,
+			ExcludeFilter:        option.ExcludeFilter,
+			ExcludeType:          option.ExcludeType,
+			TestTimeout:          option.TestTimeout,
+			FailureResetInterval: option.FailureResetInterval,
+			MaxFailedTimes:       option.MaxFailedTimes,
+			MaxConnectTimes:      option.MaxConnectTimes,
+			EmptyFallback:        emptyFallback,
+			Providers:            providers,
+			UsePosition:          option.UsePosition,
 		}),
 		strategyFn:     strategyFn,
 		disableUDP:     option.DisableUDP,

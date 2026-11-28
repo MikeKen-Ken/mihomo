@@ -14,9 +14,12 @@ func TestSelectorDefaultSurvivesMemberReorder(t *testing.T) {
 	auto := &groupMemberProxy{name: "Auto"}
 	jp := &groupMemberProxy{name: "JP"}
 
-	s := NewSelector(&GroupCommonOption{Name: "Nodes"}, []P.ProxyProvider{
+	s, err := NewSelector(GroupCommonOption{Name: "Nodes"}, SelectorOption{}, &groupMemberProxy{name: "COMPATIBLE"}, []P.ProxyProvider{
 		&orderedTestProvider{version: 1, members: []C.Proxy{direct, auto, jp}},
 	})
+	if err != nil {
+		t.Fatalf("NewSelector: %v", err)
+	}
 	provider := s.providers[0].(*orderedTestProvider)
 
 	if got := s.Now(); got != "DIRECT" {
@@ -66,7 +69,7 @@ func TestSelectorDefaultSurvivesMemberReorder(t *testing.T) {
 }
 
 func TestSelectorDefaultIsFirstMemberWithoutPin(t *testing.T) {
-	s := NewSelector(&GroupCommonOption{Name: "Nodes"}, []P.ProxyProvider{
+	s, err := NewSelector(GroupCommonOption{Name: "Nodes"}, SelectorOption{}, &groupMemberProxy{name: "COMPATIBLE"}, []P.ProxyProvider{
 		&orderedTestProvider{
 			version: 1,
 			members: []C.Proxy{
@@ -75,13 +78,16 @@ func TestSelectorDefaultIsFirstMemberWithoutPin(t *testing.T) {
 			},
 		},
 	})
+	if err != nil {
+		t.Fatalf("NewSelector: %v", err)
+	}
 	if got := s.Now(); got != "DIRECT" {
 		t.Fatalf("Now() = %q, want first member DIRECT", got)
 	}
 }
 
 func TestOtherSelectorStillDefaultsToFirstMember(t *testing.T) {
-	s := NewSelector(&GroupCommonOption{Name: "Final"}, []P.ProxyProvider{
+	s, err := NewSelector(GroupCommonOption{Name: "Final"}, SelectorOption{}, &groupMemberProxy{name: "COMPATIBLE"}, []P.ProxyProvider{
 		&orderedTestProvider{
 			version: 1,
 			members: []C.Proxy{
@@ -90,6 +96,9 @@ func TestOtherSelectorStillDefaultsToFirstMember(t *testing.T) {
 			},
 		},
 	})
+	if err != nil {
+		t.Fatalf("NewSelector: %v", err)
+	}
 	if got := s.Now(); got != "Auto" {
 		t.Fatalf("Now() = %q, want first member Auto", got)
 	}

@@ -60,7 +60,7 @@ func TestConcurrentDialFailuresStartOnePrecheck(t *testing.T) {
 	const initialFailures = 32
 	var initial sync.WaitGroup
 	initial.Add(initialFailures)
-	for range initialFailures {
+	for i := 0; i < initialFailures; i++ {
 		go func() {
 			defer initial.Done()
 			gb.onDialFailed(context.Background(), C.Shadowsocks, dialErr, proxy, "https://example.com", "204", func() {})
@@ -88,7 +88,7 @@ func TestConcurrentDialFailuresStartOnePrecheck(t *testing.T) {
 	const failuresDuringPrecheck = 32
 	var during sync.WaitGroup
 	during.Add(failuresDuringPrecheck)
-	for range failuresDuringPrecheck {
+	for i := 0; i < failuresDuringPrecheck; i++ {
 		go func() {
 			defer during.Done()
 			gb.onDialFailed(context.Background(), C.Shadowsocks, dialErr, proxy, "https://example.com", "204", func() {})
@@ -134,7 +134,7 @@ func TestFailureCounterConcurrentReset(t *testing.T) {
 	const iterations = 100
 	var wg sync.WaitGroup
 	wg.Add(iterations * 2)
-	for range iterations {
+	for i := 0; i < iterations; i++ {
 		go func() {
 			defer wg.Done()
 			gb.onDialFailed(context.Background(), C.Shadowsocks, dialErr, nil, "", "", nil)
