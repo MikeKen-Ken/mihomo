@@ -81,8 +81,10 @@ type ProxyProvider interface {
 	// Commonly used in DialContext and DialPacketConn
 	Touch()
 	HealthCheck()
+	HealthCheckURLUntilHealthy(url string, expectedStatus utils.IntRanges[uint16], targetNames map[string]struct{}) bool
 	Version() uint32
 	RegisterHealthCheckTask(url string, expectedStatus utils.IntRanges[uint16], filter string, interval uint)
+	RegisterHealthCheckCallback(callback func())
 	HealthCheckURL() string
 }
 
@@ -93,6 +95,11 @@ type RuleProvider interface {
 	Count() int
 	Match(metadata *constant.Metadata, helper constant.RuleMatchHelper) bool
 	Strategy() any
+}
+
+// RuleDetailProvider optionally returns the matched rule detail alongside Match.
+type RuleDetailProvider interface {
+	MatchWithDetail(metadata *constant.Metadata, helper constant.RuleMatchHelper) (bool, string)
 }
 
 // Rule Behavior

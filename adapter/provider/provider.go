@@ -72,6 +72,10 @@ func (bp *baseProvider) HealthCheck() {
 	bp.healthCheck.check()
 }
 
+func (bp *baseProvider) HealthCheckURLUntilHealthy(url string, expectedStatus utils.IntRanges[uint16], targetNames map[string]struct{}) bool {
+	return bp.healthCheck.checkURLUntilHealthy(url, expectedStatus, targetNames)
+}
+
 func (bp *baseProvider) Type() P.ProviderType {
 	return P.Proxy
 }
@@ -98,6 +102,10 @@ func (bp *baseProvider) HealthCheckURL() string {
 
 func (bp *baseProvider) RegisterHealthCheckTask(url string, expectedStatus utils.IntRanges[uint16], filter string, interval uint) {
 	bp.healthCheck.registerHealthCheckTask(url, expectedStatus, filter, interval)
+}
+
+func (bp *baseProvider) RegisterHealthCheckCallback(callback func()) {
+	bp.healthCheck.registerHealthCheckCallback(callback)
 }
 
 func (bp *baseProvider) setProxies(proxies []C.Proxy) {

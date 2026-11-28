@@ -152,6 +152,16 @@ type ProxyAdapter interface {
 	Close() error
 }
 
+// NetworkStateResetter is implemented by adapters that keep reusable
+// transport sessions which must not survive an underlying route transition.
+type NetworkStateResetter interface {
+	ResetNetworkState() error
+}
+
+type RequestCounter interface {
+	CountRequest(metadata *Metadata)
+}
+
 type DelayHistory struct {
 	Time  time.Time `json:"time"`
 	Delay uint16    `json:"delay"`

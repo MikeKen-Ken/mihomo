@@ -29,9 +29,11 @@ type extraOption struct {
 type HealthCheck struct {
 	ctx            context.Context
 	ctxCancel      context.CancelFunc
+	name           string
 	url            string
 	extra          map[string]*extraOption
 	mu             sync.Mutex
+	callbacks      []func()
 	proxies        []C.Proxy
 	version        atomic.Uint32
 	interval       time.Duration
@@ -102,6 +104,26 @@ func (hc *HealthCheck) registerHealthCheckTask(url string, expectedStatus utils.
 	hc.extra[url] = option
 }
 
+func (hc *HealthCheck) registerHealthCheckCallback(callback func()) {
+	if callback == nil {
+		return
+	}
+
+	hc.mu.Lock()
+	hc.callbacks = append(hc.callbacks, callback)
+	hc.mu.Unlock()
+}
+
+func (hc *HealthCheck) notifyHealthCheckCallbacks() {
+	hc.mu.Lock()
+	callbacks := append([]func(){}, hc.callbacks...)
+	hc.mu.Unlock()
+
+	for _, callback := range callbacks {
+		callback()
+	}
+}
+
 func splitAndAddFiltersToExtra(filter string, option *extraOption) {
 	filter = strings.TrimSpace(filter)
 	if len(filter) != 0 {
@@ -134,34 +156,80 @@ func (hc *HealthCheck) check() {
 	}
 }
 
+func (hc *HealthCheck) checkURLUntilHealthy(url string, expectedStatus utils.IntRanges[uint16], targetNames map[string]struct{}) bool {
+	if len(hc.proxies) == 0 {
+		return false
+	}
+	defer hc.notifyHealthCheckCallbacks()
+
+	id := utils.NewUUIDV4().String()
+	log.Infoln("[%s] Health check started (until healthy) {%s}", hc.name, id)
+	option := hc.optionForURL(url, expectedStatus)
+	foundHealthy := hc.execute(hc.proxies, hc.version.Load(), url, id, option, true, targetNames, true)
+	log.Infoln("[%s] Health check completed (until healthy) {%s}", hc.name, id)
+	return foundHealthy
+}
+
+func (hc *HealthCheck) optionForURL(url string, expectedStatus utils.IntRanges[uint16]) *extraOption {
+	url = strings.TrimSpace(url)
+	if url == hc.url {
+		return &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
+	}
+
+	hc.mu.Lock()
+	option, ok := hc.extra[url]
+	if ok {
+		option = cloneExtraOption(option)
+	}
+	hc.mu.Unlock()
+	if ok {
+		return option
+	}
+
+	return &extraOption{filters: nil, expectedStatus: expectedStatus}
+}
+
+func cloneExtraOption(option *extraOption) *extraOption {
+	if option == nil {
+		return nil
+	}
+
+	clone := &extraOption{expectedStatus: option.expectedStatus}
+	if len(option.filters) != 0 {
+		clone.filters = make(map[string]struct{}, len(option.filters))
+		for filter := range option.filters {
+			clone.filters[filter] = struct{}{}
+		}
+	}
+	return clone
+}
+
 func (hc *HealthCheck) round() (uint32, error) {
+	defer hc.notifyHealthCheckCallbacks()
 	version := hc.version.Load()
 	proxies := hc.proxies
 	id := utils.NewUUIDV4().String()
-	log.Debugln("Start New Health Checking {%s}", id)
-	b := new(errgroup.Group)
-	b.SetLimit(10)
+	log.Debugln("[%s] Start New Health Checking {%s}", hc.name, id)
 
 	// execute default health check
 	option := &extraOption{filters: nil, expectedStatus: hc.expectedStatus}
-	hc.execute(b, proxies, version, hc.url, id, option)
+	hc.execute(proxies, version, hc.url, id, option, false, nil, false)
 
 	// execute extra health check
 	if len(hc.extra) != 0 {
 		for url, option := range hc.extra {
-			hc.execute(b, proxies, version, url, id, option)
+			hc.execute(proxies, version, url, id, option, false, nil, false)
 		}
 	}
-	_ = b.Wait()
-	log.Debugln("Finish A Health Checking {%s}", id)
+	log.Debugln("[%s] Finish A Health Checking {%s}", hc.name, id)
 	return version, nil
 }
 
-func (hc *HealthCheck) execute(b *errgroup.Group, proxies []C.Proxy, version uint32, url, uid string, option *extraOption) {
+func (hc *HealthCheck) execute(proxies []C.Proxy, version uint32, url, uid string, option *extraOption, stopOnFirstHealthy bool, targetNames map[string]struct{}, recovery bool) bool {
 	url = strings.TrimSpace(url)
 	if len(url) == 0 {
 		log.Debugln("Health Check has been skipped due to testUrl is empty, {%s}", uid)
-		return
+		return false
 	}
 
 	var filterReg *regexp2.Regexp
@@ -178,27 +246,84 @@ func (hc *HealthCheck) execute(b *errgroup.Group, proxies []C.Proxy, version uin
 		}
 	}
 
+	targets := make([]C.Proxy, 0, len(proxies))
 	for _, proxy := range proxies {
-		if hc.version.Load() != version {
-			break
+		if targetNames != nil {
+			if _, ok := targetNames[proxy.Name()]; !ok {
+				continue
+			}
 		}
+
 		// skip proxies that do not require health check
 		if filterReg != nil {
 			if match, _ := filterReg.MatchString(proxy.Name()); !match {
 				continue
 			}
 		}
-
-		p := proxy
-		b.Go(func() error {
-			ctx, cancel := context.WithTimeout(hc.ctx, hc.testTimeout())
-			defer cancel()
-			log.Debugln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
-			_, _ = p.URLTest(ctx, url, expectedStatus)
-			log.Debugln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, p.AliveForTestUrl(url), p.LastDelayForTestUrl(url), uid)
-			return nil
-		})
+		targets = append(targets, proxy)
 	}
+
+	if len(targets) == 0 {
+		return false
+	}
+	if recovery {
+		return hc.recoverCandidates(url, expectedStatus, targets)
+	}
+
+	workerLimit := EffectiveHealthCheckWorkerLimit()
+	if workerLimit > len(targets) {
+		workerLimit = len(targets)
+	}
+
+	anyHealthy := false
+	for start := 0; start < len(targets); start += workerLimit {
+		if hc.version.Load() != version {
+			break
+		}
+		end := start + workerLimit
+		if end > len(targets) {
+			end = len(targets)
+		}
+		batch := targets[start:end]
+		foundHealthy := false
+		healthyMux := sync.Mutex{}
+		b := new(errgroup.Group)
+
+		for _, proxy := range batch {
+			if hc.version.Load() != version {
+				break
+			}
+			p := proxy
+			b.Go(func() error {
+				base := C.WithHealthCheckSourceName(hc.ctx, hc.name)
+				if !AcquireHealthCheckWorker(base) {
+					return nil
+				}
+				defer ReleaseHealthCheckWorker()
+				ctx, cancel := context.WithTimeout(base, hc.testTimeout())
+				defer cancel()
+				log.Debugln("Health Checking, proxy: %s, url: %s, id: {%s}", p.Name(), url, uid)
+				_, err := p.URLTest(ctx, url, expectedStatus)
+				alive := err == nil && p.AliveForTestUrl(url)
+				log.Debugln("Health Checked, proxy: %s, url: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+				if alive {
+					healthyMux.Lock()
+					foundHealthy = true
+					healthyMux.Unlock()
+				}
+				return nil
+			})
+		}
+
+		_ = b.Wait()
+		if foundHealthy && stopOnFirstHealthy {
+			return true
+		}
+		if foundHealthy {
+			anyHealthy = true
+		}
+	}
+	return anyHealthy
 }
 
 func (hc *HealthCheck) close() {
@@ -206,6 +331,10 @@ func (hc *HealthCheck) close() {
 }
 
 func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, lazy bool, expectedStatus utils.IntRanges[uint16]) *HealthCheck {
+	return NewNamedHealthCheck(proxies, "", url, timeout, interval, lazy, expectedStatus)
+}
+
+func NewNamedHealthCheck(proxies []C.Proxy, name string, url string, timeout uint, interval uint, lazy bool, expectedStatus utils.IntRanges[uint16]) *HealthCheck {
 	if url == "" {
 		expectedStatus = nil
 		interval = 0
@@ -215,6 +344,7 @@ func NewHealthCheck(proxies []C.Proxy, url string, timeout uint, interval uint, 
 	return &HealthCheck{
 		ctx:            ctx,
 		ctxCancel:      cancel,
+		name:           name,
 		proxies:        proxies,
 		url:            url,
 		timeout:        time.Duration(timeout) * time.Millisecond,

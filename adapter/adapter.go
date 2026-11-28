@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
@@ -20,6 +19,8 @@ import (
 	"github.com/metacubex/http"
 )
 
+// UnifiedDelay is kept for mihomo config apply. URLTest ignores it and always
+// measures dial start through the first HTTP response.
 var UnifiedDelay = atomic.NewBool(false)
 
 const (
@@ -113,6 +114,26 @@ func (p *Proxy) ExtraDelayHistories() map[string]C.ProxyState {
 	return histories
 }
 
+// RememberPassedDelay records a delay already measured for this node under
+// another group's test URL. Startup reuse must not probe the node again.
+func (p *Proxy) RememberPassedDelay(url string, delay uint16) {
+	if p == nil || url == "" || delay == 0 {
+		return
+	}
+	record := C.DelayHistory{Time: time.Now(), Delay: delay}
+	state, _ := p.extra.LoadOrStoreFn(url, func() *internalProxyState {
+		return &internalProxyState{
+			history: queue.New[C.DelayHistory](defaultHistoriesNum),
+			alive:   atomic.NewBool(true),
+		}
+	})
+	state.alive.Store(true)
+	state.history.Put(record)
+	if state.history.Len() > defaultHistoriesNum {
+		state.history.Pop()
+	}
+}
+
 // LastDelayForTestUrl return last history record of the specified URL. if proxy is not alive, return the max value of uint16.
 // implements C.Proxy
 func (p *Proxy) LastDelayForTestUrl(url string) (delay uint16) {
@@ -164,11 +185,45 @@ func (p *Proxy) MarshalJSON() ([]byte, error) {
 // URLTest get the delay for the specified URL
 // implements C.Proxy
 func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.IntRanges[uint16]) (t uint16, err error) {
+	ctx = C.WithSuppressGroupOutboundFailureStats(ctx)
+	timeoutMs := 5000
+	if configuredTimeoutMs, ok := C.DelayTestTimeoutMs(ctx); ok {
+		timeoutMs = configuredTimeoutMs
+	} else if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 {
+			timeoutMs = int(remaining.Milliseconds())
+		}
+	}
+	// Register cleanup before result recording so our own cancel does not make
+	// a completed probe look like externally canceled recovery work.
+	if _, ok := C.DelayTestTimeoutMs(ctx); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+		defer cancel()
+	}
 	var satisfied bool
+	uid := utils.NewUUIDV4().String()
+	if src := C.HealthCheckSourceName(ctx); src != "" {
+		log.Debugln("[%s] Health check in progress, proxy: %s, URL: %s, id: {%s}", src, p.Name(), url, uid)
+	} else {
+		log.Debugln("Health check in progress, proxy: %s, URL: %s, id: {%s}", p.Name(), url, uid)
+	}
 
 	defer func() {
-		if UrlTestHook != nil {
+		if UrlTestHook != nil && !C.IsConnectivityProbe(ctx) {
 			UrlTestHook(url, p.Name(), t, ctx.Err() != nil)
+		}
+
+		// Recovery stops redundant probes after a usable backup is found.
+		// Such cancellation says nothing about the canceled node's health.
+		if ctx.Err() == context.Canceled {
+			return
+		}
+		if C.IsConnectivityProbe(ctx) {
+			if err == nil && !satisfied {
+				err = fmt.Errorf("connectivity probe returned an unexpected HTTP status")
+			}
+			return
 		}
 
 		alive := err == nil
@@ -201,9 +256,18 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 			state.history.Pop()
 		}
 
-	}()
+		if src := C.HealthCheckSourceName(ctx); src != "" {
+			log.Debugln("[%s] Health check completed, proxy: %s, URL: %s, alive: %t, delay: %d ms uid: {%s}", src, p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+		} else {
+			log.Debugln("Health check completed, proxy: %s, URL: %s, alive: %t, delay: %d ms uid: {%s}", p.Name(), url, alive, p.LastDelayForTestUrl(url), uid)
+		}
 
-	unifiedDelay := UnifiedDelay.Load()
+		delayVal := int(t)
+		if !alive || !satisfied {
+			delayVal = 0
+		}
+		recordProxyConnectivityTest(p.Name(), delayVal, timeoutMs)
+	}()
 
 	addr, err := urlToMetadata(url)
 	if err != nil {
@@ -223,13 +287,13 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 	if err != nil {
 		return
 	}
-	req = req.WithContext(ctx)
 
 	tlsConfig, err := ca.GetTLSConfig(ca.Option{})
 	if err != nil {
 		return
 	}
 
+	phaseTimeout := time.Duration(timeoutMs) * time.Millisecond
 	transport := &http.Transport{
 		DialContext: func(context.Context, string, string) (net.Conn, error) {
 			return instance, nil
@@ -237,13 +301,13 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		// from http.DefaultTransport
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
+		TLSHandshakeTimeout:   phaseTimeout,
 		ExpectContinueTimeout: 1 * time.Second,
 		TLSClientConfig:       tlsConfig,
 	}
 
 	client := http.Client{
-		Timeout:   30 * time.Second,
+		Timeout:   phaseTimeout,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -252,30 +316,13 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 
 	defer client.CloseIdleConnections()
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req.Clone(ctx))
 
 	if err != nil {
 		return
 	}
 
 	_ = resp.Body.Close()
-
-	if unifiedDelay {
-		second := time.Now()
-		var ignoredErr error
-		var secondResp *http.Response
-		secondResp, ignoredErr = client.Do(req)
-		if ignoredErr == nil {
-			resp = secondResp
-			_ = resp.Body.Close()
-			start = second
-		} else {
-			if strings.HasPrefix(url, "http://") {
-				log.Errorln("%s failed to get the second response from %s: %v", p.Name(), url, ignoredErr)
-				log.Warnln("It is recommended to use HTTPS for provider.health-check.url and group.url to ensure better reliability. Due to some proxy providers hijacking test addresses and not being compatible with repeated HEAD requests, using HTTP may result in failed tests.")
-			}
-		}
-	}
 
 	satisfied = resp != nil && (expectedStatus == nil || expectedStatus.Check(uint16(resp.StatusCode)))
 	t = uint16(time.Since(start) / time.Millisecond)
@@ -284,7 +331,15 @@ func (p *Proxy) URLTest(ctx context.Context, url string, expectedStatus utils.In
 		// that completed in under a millisecond as 1 ms
 		t = 1
 	}
+	if delayReachedTimeout(t, timeoutMs) {
+		err = fmt.Errorf("measured delay %dms reached timeout %dms", t, timeoutMs)
+		satisfied = false
+	}
 	return
+}
+
+func delayReachedTimeout(delay uint16, timeoutMs int) bool {
+	return timeoutMs > 0 && int(delay) >= timeoutMs
 }
 
 func NewProxy(adapter C.ProxyAdapter) *Proxy {
@@ -293,6 +348,12 @@ func NewProxy(adapter C.ProxyAdapter) *Proxy {
 		history:      queue.New[C.DelayHistory](defaultHistoriesNum),
 		alive:        atomic.NewBool(true),
 	}
+}
+
+// RecordConnectivitySample records one completed delay observation through the
+// same path as Proxy.URLTest. A delay of 0 is a finished failure.
+func RecordConnectivitySample(proxyName string, delay int, timeoutMs int) {
+	recordProxyConnectivityTest(proxyName, delay, timeoutMs)
 }
 
 func urlToMetadata(rawURL string) (addr C.Metadata, err error) {
