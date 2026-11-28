@@ -234,14 +234,18 @@ func ClearCache() {
 	if DefaultResolver != nil {
 		go DefaultResolver.ClearCache()
 	}
-	go SystemResolver.ClearCache() // SystemResolver unneeded check nil
+	if SystemResolver != nil {
+		go SystemResolver.ClearCache()
+	}
 }
 
 func ResetConnection() {
 	if DefaultResolver != nil {
 		go DefaultResolver.ResetConnection()
 	}
-	go SystemResolver.ResetConnection() // SystemResolver unneeded check nil
+	if SystemResolver != nil {
+		go SystemResolver.ResetConnection()
+	}
 }
 
 func SortationAddr(ips []netip.Addr) (ipv4s, ipv6s []netip.Addr) {

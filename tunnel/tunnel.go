@@ -148,6 +148,15 @@ func Status() TunnelStatus {
 	return status.Load()
 }
 
+// CloseAllConnections closes all active tracked connections so subsequent
+// requests do not stay bound to stale DNS or Fake-IP state.
+func CloseAllConnections() {
+	statistic.DefaultManager.Range(func(c statistic.Tracker) bool {
+		_ = c.Close()
+		return true
+	})
+}
+
 func SetSniffing(b bool) {
 	if snifferDispatcher.Enable() {
 		configMux.Lock()

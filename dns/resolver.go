@@ -191,6 +191,8 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 	retryMax := 3
 	initiator := queryInitiator(ctx)
 	fn := func() (result *D.Msg, err error) {
+		// Count the shared upstream exchange once, never its canceled waiters.
+		defer func() { dnsHealth.recordExchange(q.Name, err == nil) }()
 		ctx, cancel := context.WithTimeout(context.Background(), resolver.DefaultDNSTimeout) // reset timeout in singleflight
 		defer cancel()
 		ctx, trace := r.traceExchange(ctx, q, initiator)
@@ -402,6 +404,9 @@ func (r *Resolver) ClearCache() {
 
 func (r *Resolver) ResetConnection() {
 	if r != nil {
+		// New queries must not join an in-flight request whose transport is
+		// being reset. Existing callers still receive the old call's result.
+		r.group.Reset()
 		for _, c := range r.main {
 			c.ResetConnection()
 		}

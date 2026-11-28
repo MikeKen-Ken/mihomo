@@ -34,7 +34,10 @@ type OpenVPN struct {
 	runCtx    context.Context
 	runCancel context.CancelFunc
 	runLock   *semaphore.Weighted
+	contextMu sync.RWMutex
+	stopMu    sync.Mutex
 	running   bool
+	closed    bool
 }
 
 type OpenVPNOption struct {
@@ -234,15 +237,41 @@ func (o *OpenVPN) IsL3Protocol(metadata *C.Metadata) bool {
 }
 
 func (o *OpenVPN) Close() error {
-	if o.runCancel != nil {
-		o.runCancel()
+	return o.stopRuntime(false)
+}
+
+func (o *OpenVPN) ResetNetworkState() error {
+	return o.stopRuntime(true)
+}
+
+func (o *OpenVPN) stopRuntime(reopen bool) error {
+	o.stopMu.Lock()
+	defer o.stopMu.Unlock()
+
+	_, cancel := o.runtimeContext()
+	if cancel != nil {
+		cancel()
 	}
 	_ = o.runLock.Acquire(context.Background(), 1)
+	if reopen && o.closed {
+		o.runLock.Release(1)
+		return nil
+	}
 	client := o.client
 	tunDevice := o.tunDevice
 	o.client = nil
 	o.tunDevice = nil
+	o.resolver = nil
 	o.running = false
+	if reopen {
+		runCtx, runCancel := context.WithCancel(context.Background())
+		o.contextMu.Lock()
+		o.runCtx = runCtx
+		o.runCancel = runCancel
+		o.contextMu.Unlock()
+	} else {
+		o.closed = true
+	}
 	o.runLock.Release(1)
 
 	if client != nil {
@@ -256,7 +285,8 @@ func (o *OpenVPN) Close() error {
 
 func (o *OpenVPN) run(ctx context.Context) (ipStack, resolver.Resolver, error) {
 	runCtx, cancel := context.WithCancel(ctx)
-	stop := contextutils.AfterFunc(o.runCtx, cancel)
+	runtimeCtx, _ := o.runtimeContext()
+	stop := contextutils.AfterFunc(runtimeCtx, cancel)
 	defer func() {
 		stop()
 		cancel()
@@ -278,8 +308,8 @@ func (o *OpenVPN) run(ctx context.Context) (ipStack, resolver.Resolver, error) {
 		}
 		return o.tunDevice, o.resolver, nil
 	}
-	if o.runCtx.Err() != nil {
-		return nil, nil, o.runCtx.Err()
+	if o.contextErr(ctx) != nil {
+		return nil, nil, o.contextErr(ctx)
 	}
 
 	if o.option.HandshakeTimeout > 0 {
@@ -295,7 +325,8 @@ func (o *OpenVPN) run(ctx context.Context) (ipStack, resolver.Resolver, error) {
 			defer o.runLock.Release(1)
 
 			handshakeTimeout := time.Duration(o.option.HandshakeTimeout) * time.Second
-			handshakeCtx, handshakeCancel := context.WithTimeout(o.runCtx, handshakeTimeout)
+			rCtx, _ := o.runtimeContext()
+			handshakeCtx, handshakeCancel := context.WithTimeout(rCtx, handshakeTimeout)
 			defer handshakeCancel()
 
 			tunDevice, r, err := o.startLocked(handshakeCtx)
@@ -311,6 +342,23 @@ func (o *OpenVPN) run(ctx context.Context) (ipStack, resolver.Resolver, error) {
 	}
 
 	return o.startLocked(runCtx)
+}
+
+func (o *OpenVPN) runtimeContext() (context.Context, context.CancelFunc) {
+	o.contextMu.RLock()
+	defer o.contextMu.RUnlock()
+	return o.runCtx, o.runCancel
+}
+
+func (o *OpenVPN) contextErr(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	runCtx, _ := o.runtimeContext()
+	if runCtx == nil {
+		return net.ErrClosed
+	}
+	return runCtx.Err()
 }
 
 func (o *OpenVPN) startLocked(handshakeCtx context.Context) (ipStack, resolver.Resolver, error) {
@@ -390,7 +438,8 @@ func (o *OpenVPN) openPacketIO(ctx context.Context) (ovpn.PacketIO, error) {
 }
 
 func (o *OpenVPN) startPacketLoops() {
-	runCtx, runCancel := context.WithCancel(o.runCtx)
+	parentCtx, _ := o.runtimeContext()
+	runCtx, runCancel := context.WithCancel(parentCtx)
 	client := o.client
 	tunDevice := o.tunDevice
 	var stopOnce sync.Once

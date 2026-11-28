@@ -120,6 +120,11 @@ func (h *Hysteria2) ResetNetwork() {
 	}
 }
 
+func (h *Hysteria2) ResetNetworkState() error {
+	h.ResetNetwork()
+	return nil
+}
+
 func (h *Hysteria2) Close() error {
 	if h.client != nil {
 		return h.client.CloseWithError(errors.New("proxy removed"))

@@ -128,10 +128,26 @@ func (h *ResolverEnhancer) FlushFakeIP() error {
 			errs = append(errs, err)
 		}
 	}
+	if h.mapping != nil {
+		h.mapping.Clear()
+	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
 	return nil
+}
+
+// DeleteFakeIPMapping drops fake-ip pool and enhancer mapping entries for one address only.
+func (h *ResolverEnhancer) DeleteFakeIPMapping(ip netip.Addr) {
+	if pool := h.fakeIPPool; pool != nil && pool.IPNet().Contains(ip) {
+		pool.DelIP(ip)
+	}
+	if pool6 := h.fakeIPPool6; pool6 != nil && pool6.IPNet().Contains(ip) {
+		pool6.DelIP(ip)
+	}
+	if mapping := h.mapping; mapping != nil {
+		mapping.Delete(ip)
+	}
 }
 
 func (h *ResolverEnhancer) PatchFrom(o *ResolverEnhancer) {

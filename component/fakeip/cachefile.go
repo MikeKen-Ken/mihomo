@@ -35,6 +35,11 @@ func (c *cachefileStore) DelByIP(ip netip.Addr) {
 	c.cache.DelByIP(ip)
 }
 
+// DeleteByHost implements store.DeleteByHost
+func (c *cachefileStore) DeleteByHost(host string) {
+	c.cache.DeleteByHost(host)
+}
+
 // Exist implements store.Exist
 func (c *cachefileStore) Exist(ip netip.Addr) bool {
 	_, exist := c.GetByIP(ip)

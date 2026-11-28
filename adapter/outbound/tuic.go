@@ -73,6 +73,11 @@ func (t *Tuic) ResetNetwork() {
 	t.client.ResetNetwork()
 }
 
+func (t *Tuic) ResetNetworkState() error {
+	t.client.ResetNetwork()
+	return nil
+}
+
 // DialContext implements C.ProxyAdapter
 func (t *Tuic) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn, error) {
 	conn, err := t.client.DialContext(ctx, metadata)

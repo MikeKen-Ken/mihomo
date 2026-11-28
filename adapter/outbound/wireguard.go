@@ -829,6 +829,11 @@ func (w *WireGuard) ResetNetwork() {
 	}
 }
 
+func (w *WireGuard) ResetNetworkState() error {
+	w.ResetNetwork()
+	return nil
+}
+
 func (w *WireGuard) DialContext(ctx context.Context, metadata *C.Metadata) (_ C.Conn, err error) {
 	var conn net.Conn
 	if err = w.init(ctx); err != nil {

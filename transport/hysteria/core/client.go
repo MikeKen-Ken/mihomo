@@ -287,6 +287,19 @@ func (c *Client) Close() error {
 	return err
 }
 
+// ResetConnections discards the QUIC session without permanently closing the
+// client, so the next stream can reconnect on a new underlying route.
+func (c *Client) ResetConnections() error {
+	c.reconnectMutex.Lock()
+	defer c.reconnectMutex.Unlock()
+	if c.closed || c.quicSession == nil {
+		return nil
+	}
+	oldSession := c.quicSession
+	c.quicSession = nil
+	return oldSession.CloseWithError(closeErrorCodeGeneric, "network changed")
+}
+
 type quicConn struct {
 	Orig             *wrappedQUICStream
 	PseudoLocalAddr  net.Addr
